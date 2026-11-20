@@ -24,6 +24,7 @@ local Packages = Modules.Packages
 local Seam = require(Packages.Seam)
 local SeamStoryUtils = require(Packages.SeamStoryUtils)
 local UILabs = require(Packages.UILabs)
+local ViewportParticles = require(Modules.ViewportParticles)
 
 Story.controls = {
 	FieldOfView = UILabs.Slider(70, 1, 120),
@@ -107,7 +108,7 @@ local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize :
 	return MinX, MinY, MaxX - MinX, MaxY - MinY, DepthSum / SampleCount
 end
 
-local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : Frame}, ShowBounds : boolean)
+local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : Frame}, MimicBindings : {ViewportParticles.MimicBinding}, ShowBounds : boolean)
 	local PixelSize = Viewport.AbsoluteSize
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return
@@ -115,6 +116,7 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 
 	local BackgroundTransparency = if ShowBounds then BOUNDS_BACKGROUND_TRANSPARENCY else 1
 	local StrokeTransparency = if ShowBounds then BOUNDS_STROKE_TRANSPARENCY else 1
+	local DepthByPart : {[BasePart] : number} = {}
 	local Ranked = {}
 
 	for _, Part in Parts do
@@ -129,11 +131,14 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 			continue
 		end
 
+		DepthByPart[Part] = Depth :: number
+
 		Scope:New(Frame, {
 			Visible = true,
 			Position = UDim2.fromOffset(X, Y),
 			Size = UDim2.fromOffset(math.max(Width, 1), math.max(Height, 1)),
 			BackgroundTransparency = BackgroundTransparency,
+			ClipsDescendants = false,
 		})
 
 		if Stroke then
@@ -157,6 +162,8 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 			ZIndex = Index,
 		})
 	end
+
+	ViewportParticles.UpdateMimicScales(MimicBindings, Camera, PixelSize, DepthByPart)
 end
 
 function Story.render(props)
@@ -205,6 +212,7 @@ function Story.render(props)
 			BackgroundColor3 = Color3.fromRGB(0, 255, 140),
 			BackgroundTransparency = 0.85,
 			BorderSizePixel = 0,
+			ClipsDescendants = false,
 			Visible = false,
 
 			[Seam.Children] = {
@@ -215,6 +223,8 @@ function Story.render(props)
 			},
 		})
 	end
+
+	local MimicBindings = ViewportParticles.AttachToBoundsFrames(Scope, Asset, FramesByPart, 40)
 
 	Scope:New("Frame", {
 		Name = "ViewportRoot",
@@ -252,7 +262,7 @@ function Story.render(props)
 		Camera.FieldOfView = Controls.FieldOfView.Value
 		Camera.CFrame = CFrame.lookAt(Focus + Vector3.new(0, 0, Controls.CameraDistance.Value), Focus)
 
-		UpdatePartBoundsFrames(Scope, Viewport, Camera, Parts, FramesByPart, Controls.ShowBounds.Value)
+		UpdatePartBoundsFrames(Scope, Viewport, Camera, Parts, FramesByPart, MimicBindings, Controls.ShowBounds.Value)
 	end
 
 	Scope:OnChanged(Viewport, function(Property)
