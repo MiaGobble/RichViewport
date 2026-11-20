@@ -6,7 +6,11 @@
 
     "ReplicatedFirst": {
       "Modules": {
-        "$path": "src/Client/Modules"
+        "$path": "src/Client/Modules",
+
+        "Packages": {
+          "$path": "roblox_packages"
+        }
       }
     }
   }
