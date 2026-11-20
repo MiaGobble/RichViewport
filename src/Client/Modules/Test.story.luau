@@ -38,11 +38,9 @@ local function CollectParts(Root : Instance) : {BasePart}
 		table.insert(Parts, Root)
 	end
 
-	for _, Descendant in Root:GetDescendants() do
-		if Descendant:IsA("BasePart") then
-			table.insert(Parts, Descendant)
-		end
-	end
+    for _, Descendant in Root:QueryDescendants("BasePart") do
+        table.insert(Parts, Descendant)
+    end
 
 	return Parts
 end
