@@ -38,14 +38,18 @@ local function CollectParts(Root : Instance) : {BasePart}
 		table.insert(Parts, Root)
 	end
 
-    for _, Descendant in Root:QueryDescendants("BasePart") do
-        table.insert(Parts, Descendant)
-    end
+	for _, Descendant in Root:QueryDescendants("BasePart") do
+		table.insert(Parts, Descendant)
+	end
 
 	return Parts
 end
 
-local function GetPartScreenBounds(Camera : Camera, Part : BasePart) : (number?, number?, number?, number?, number?)
+local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize : Vector2) : (number?, number?, number?, number?, number?)
+	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
+		return nil
+	end
+
 	local HalfSize = Part.Size * 0.5
 	local PartCFrame = Part.CFrame
 
@@ -64,10 +68,15 @@ local function GetPartScreenBounds(Camera : Camera, Part : BasePart) : (number?,
 			continue
 		end
 
-		MinX = math.min(MinX, ScreenPoint.X)
-		MinY = math.min(MinY, ScreenPoint.Y)
-		MaxX = math.max(MaxX, ScreenPoint.X)
-		MaxY = math.max(MaxY, ScreenPoint.Y)
+		-- WorldToViewportPoint uses Camera.ViewportSize; remap into the overlay's pixel space.
+		local ViewportSize = Camera.ViewportSize
+		local PixelX = if ViewportSize.X > 0 then ScreenPoint.X / ViewportSize.X * PixelSize.X else ScreenPoint.X
+		local PixelY = if ViewportSize.Y > 0 then ScreenPoint.Y / ViewportSize.Y * PixelSize.Y else ScreenPoint.Y
+
+		MinX = math.min(MinX, PixelX)
+		MinY = math.min(MinY, PixelY)
+		MaxX = math.max(MaxX, PixelX)
+		MaxY = math.max(MaxY, PixelY)
 		DepthSum += ScreenPoint.Z
 		SampleCount += 1
 	end
@@ -79,9 +88,9 @@ local function GetPartScreenBounds(Camera : Camera, Part : BasePart) : (number?,
 	return MinX, MinY, MaxX - MinX, MaxY - MinY, DepthSum / SampleCount
 end
 
-local function UpdatePartBoundsFrames(Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : Frame})
-	local AbsoluteSize = Viewport.AbsoluteSize
-	if AbsoluteSize.X <= 0 or AbsoluteSize.Y <= 0 then
+local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : Frame})
+	local PixelSize = Viewport.AbsoluteSize
+	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return
 	end
 
@@ -89,30 +98,20 @@ local function UpdatePartBoundsFrames(Viewport : ViewportFrame, Camera : Camera,
 
 	for _, Part in Parts do
 		local Frame = FramesByPart[Part]
-		if not Frame then
-			Frame = Instance.new("Frame")
-			Frame.Name = `{Part.Name}_Bounds`
-			Frame.BackgroundTransparency = 1
-			Frame.BorderSizePixel = 0
-			Frame.Parent = Viewport
+		local X, Y, Width, Height, Depth = GetPartScreenBounds(Camera, Part, PixelSize)
 
-			local Stroke = Instance.new("UIStroke")
-			Stroke.Thickness = 1
-			Stroke.Color = Color3.fromRGB(0, 255, 140)
-			Stroke.Parent = Frame
-
-			FramesByPart[Part] = Frame
-		end
-
-		local X, Y, Width, Height, Depth = GetPartScreenBounds(Camera, Part)
 		if not X then
-			Frame.Visible = false
+			Scope:New(Frame, {
+				Visible = false,
+			})
 			continue
 		end
 
-		Frame.Visible = true
-		Frame.Position = UDim2.fromOffset(X, Y)
-		Frame.Size = UDim2.fromOffset(Width, Height)
+		Scope:New(Frame, {
+			Visible = true,
+			Position = UDim2.fromOffset(X, Y),
+			Size = UDim2.fromOffset(math.max(Width, 1), math.max(Height, 1)),
+		})
 
 		table.insert(Ranked, {
 			Frame = Frame,
@@ -125,7 +124,9 @@ local function UpdatePartBoundsFrames(Viewport : ViewportFrame, Camera : Camera,
 	end)
 
 	for Index, Entry in Ranked do
-		Entry.Frame.ZIndex = Index
+		Scope:New(Entry.Frame, {
+			ZIndex = Index,
+		})
 	end
 end
 
@@ -148,17 +149,11 @@ function Story.render(props)
 
 	local Viewport = Scope:New("ViewportFrame", {
 		Name = "AssetViewport",
-		Parent = props.target,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Color3.fromRGB(20, 20, 24),
 		BorderSizePixel = 0,
 		CurrentCamera = Camera,
-
-		Size = Scope:Computed(function(use)
-			local Scale = use(Controls.ViewportScale)
-			return UDim2.fromScale(Scale, Scale)
-		end),
+		ZIndex = 1,
 
 		[Seam.Children] = {
 			Camera,
@@ -166,11 +161,56 @@ function Story.render(props)
 		},
 	})
 
+	local Overlay = Scope:New("Frame", {
+		Name = "BoundsOverlay",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ZIndex = 2,
+	})
+
+	for _, Part in Parts do
+		FramesByPart[Part] = Scope:New("Frame", {
+			Name = `{Part.Name}_Bounds`,
+			Parent = Overlay,
+			BackgroundColor3 = Color3.fromRGB(0, 255, 140),
+			BackgroundTransparency = 0.85,
+			BorderSizePixel = 0,
+			Visible = false,
+
+			[Seam.Children] = {
+				Scope:New("UIStroke", {
+					Thickness = 1,
+					Color = Color3.fromRGB(0, 255, 140),
+				}),
+			},
+		})
+	end
+
+	Scope:New("Frame", {
+		Name = "ViewportRoot",
+		Parent = props.target,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+
+		Size = Scope:Computed(function(use)
+			local Scale = use(Controls.ViewportScale)
+			return UDim2.fromScale(Scale, Scale)
+		end),
+
+		[Seam.Children] = {
+			Viewport,
+			Overlay,
+		},
+	})
+
 	local function RefreshViewport()
 		Asset:PivotTo(CFrame.fromEulerAnglesXYZ(
-            math.rad(Controls.RotationX.Value),
-            math.rad(Controls.RotationY.Value),
-            math.rad(Controls.RotationZ.Value)
+			math.rad(Controls.RotationX.Value),
+			math.rad(Controls.RotationY.Value),
+			math.rad(Controls.RotationZ.Value)
 		))
 
 		local BoundsCFrame = if Asset:IsA("Model")
@@ -183,7 +223,7 @@ function Story.render(props)
 		Camera.FieldOfView = Controls.FieldOfView.Value
 		Camera.CFrame = CFrame.lookAt(Focus + Vector3.new(0, 0, Controls.CameraDistance.Value), Focus)
 
-		UpdatePartBoundsFrames(Viewport, Camera, Parts, FramesByPart)
+		UpdatePartBoundsFrames(Scope, Viewport, Camera, Parts, FramesByPart)
 	end
 
 	Scope:OnChanged(Viewport, function(Property)
@@ -199,6 +239,7 @@ function Story.render(props)
 	end
 
 	RefreshViewport()
+	task.defer(RefreshViewport)
 
 	return SeamStoryUtils.WrappedScopeCleanup(Scope)
 end
