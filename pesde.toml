@@ -32,3 +32,5 @@ rojo = { name = "pesde/rojo", version = "^7.7.0", target = "lune" }
 
 [dependencies]
 Seam = { name = "miagobble/seam", version = "^1.1.0" }
+SeamStoryUtils = { name = "miagobble/seam_story_utils", version = "^0.1.5" }
+ui-labs = { wally = "pepeeltoro41/ui-labs", version = "^2.4.2" }

@@ -74,6 +74,13 @@ direct = ["Seam", { name = "miagobble/seam", version = "^1.1.0", index = "defaul
 ref_ty = "pesde"
 index_url = "https://github.com/pesde-pkg/index"
 
+[graph."miagobble/seam_story_utils@0.1.5 roblox"]
+direct = ["SeamStoryUtils", { name = "miagobble/seam_story_utils", version = "^0.1.5", index = "default" }, "standard"]
+
+[graph."miagobble/seam_story_utils@0.1.5 roblox".pkg_ref]
+ref_ty = "pesde"
+index_url = "https://github.com/pesde-pkg/index"
+
 [graph."pesde/rojo@7.7.0 lune"]
 direct = ["rojo", { name = "pesde/rojo", version = "^7.7.0", index = "default", target = "lune" }, "dev"]
 
@@ -135,3 +142,10 @@ option = [{ name = "lukadev_0/option", version = "^1.2.1", index = "https://gith
 pathfs = [{ name = "jiwonz/pathfs", version = "^0.6.0", index = "https://github.com/pesde-pkg/index" }, "standard"]
 result = [{ name = "lukadev_0/result", version = "^1.2.1", index = "https://github.com/pesde-pkg/index" }, "peer"]
 unzip = [{ name = "0x5eal/unzip", version = "^0.2.0", index = "https://github.com/pesde-pkg/index", target = "luau" }, "standard"]
+
+[graph."wally#pepeeltoro41/ui-labs@2.4.2 roblox"]
+direct = ["ui-labs", { wally = "wally#pepeeltoro41/ui-labs", version = "^2.4.2", index = "default" }, "standard"]
+
+[graph."wally#pepeeltoro41/ui-labs@2.4.2 roblox".pkg_ref]
+ref_ty = "wally"
+index_url = "https://github.com/UpliftGames/wally-index"
