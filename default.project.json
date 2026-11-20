@@ -9,7 +9,8 @@
         "$path": "src/Client/Modules",
 
         "Packages": {
-          "$path": "roblox_packages"
+          "$path": "roblox_packages",
+          "$className": "Folder"
         }
       }
     }
