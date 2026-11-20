@@ -165,7 +165,7 @@ local function CreateAttachmentHost(Scope : any, Parent : Frame, Name : string) 
 	})
 end
 
-local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : ParticleEmitter, Part : BasePart, BoundsFrame : Frame, Layer : "Front" | "Behind", PixelsPerStud : number, RateScale : number, Attachment : Attachment?)
+local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : ParticleEmitter, Part : BasePart, BoundsFrame : Frame, Layer : "Front" | "Behind", PixelsPerStud : number, RateScale : number, Attachment : Attachment?, EmissionMode : Enum.ParticleEmitter2DEmissionMode)
 	local HostFrame = nil
 	local Parent = BoundsFrame
 
@@ -173,10 +173,6 @@ local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : Pa
 		HostFrame = CreateAttachmentHost(Scope, BoundsFrame, `{Emitter3D.Name}_Point`)
 		Parent = HostFrame
 	end
-
-	local EmissionMode = if Attachment
-		then Enum.ParticleEmitter2DEmissionMode.Point
-		else Enum.ParticleEmitter2DEmissionMode.BoundingBox
 
 	local Emitter2D = ViewportParticles.CreateMimic(Scope, Emitter3D, Parent, PixelsPerStud, RateScale, EmissionMode)
 
@@ -190,6 +186,18 @@ local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : Pa
 		WasEnabled = Emitter3D.Enabled,
 		LockedToPart = Emitter3D.LockedToPart,
 	})
+end
+
+-- Volume emitters fill the projected part bounds (BoundingBox). A behind/front rate
+-- split fakes particles spawning deeper in the volume so the mesh can occlude them.
+local function GetVolumeLayerWeights(ZOffset : number) : (number, number)
+	if ZOffset < 0 then
+		return 0.75, 0.25
+	elseif ZOffset > 0 then
+		return 0.25, 0.75
+	end
+
+	return 0.5, 0.5
 end
 
 function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPart : {[BasePart] : PartFrames}, PixelsPerStud : number) : {MimicBinding}
@@ -211,23 +219,66 @@ function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, Fr
 			else nil
 
 		local ZOffset = Emitter3D.ZOffset
-		local LockedToPart = Emitter3D.LockedToPart
+		local IsVolume = Emitter3D.ShapeStyle == Enum.ParticleEmitterShapeStyle.Volume
 
-		if LockedToPart then
-			-- Locked particles must stay on one host; splitting layers detaches the look.
-			if ZOffset < 0 then
-				AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 1, Attachment)
-			else
-				AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 1, Attachment)
-			end
-		elseif ZOffset < 0 then
-			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 1, Attachment)
-		elseif ZOffset > 0 then
-			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 1, Attachment)
+		if Attachment then
+			local LayerFrame = if ZOffset < 0 then Frames.Behind else Frames.Front
+			local LayerName : "Front" | "Behind" = if ZOffset < 0 then "Behind" else "Front"
+			AddBinding(
+				Bindings,
+				Scope,
+				Emitter3D,
+				Part,
+				LayerFrame,
+				LayerName,
+				PixelsPerStud,
+				1,
+				Attachment,
+				Enum.ParticleEmitter2DEmissionMode.Point
+			)
+		elseif IsVolume then
+			local BehindWeight, FrontWeight = GetVolumeLayerWeights(ZOffset)
+
+			AddBinding(
+				Bindings,
+				Scope,
+				Emitter3D,
+				Part,
+				Frames.Behind,
+				"Behind",
+				PixelsPerStud,
+				BehindWeight,
+				nil,
+				Enum.ParticleEmitter2DEmissionMode.BoundingBox
+			)
+			AddBinding(
+				Bindings,
+				Scope,
+				Emitter3D,
+				Part,
+				Frames.Front,
+				"Front",
+				PixelsPerStud,
+				FrontWeight,
+				nil,
+				Enum.ParticleEmitter2DEmissionMode.BoundingBox
+			)
 		else
-			-- No authored offset: approximate volume depth by splitting across both layers.
-			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 0.5, Attachment)
-			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 0.5, Attachment)
+			-- Surface-style: spawn across the silhouette on a single depth layer.
+			local LayerFrame = if ZOffset < 0 then Frames.Behind else Frames.Front
+			local LayerName : "Front" | "Behind" = if ZOffset < 0 then "Behind" else "Front"
+			AddBinding(
+				Bindings,
+				Scope,
+				Emitter3D,
+				Part,
+				LayerFrame,
+				LayerName,
+				PixelsPerStud,
+				1,
+				nil,
+				Enum.ParticleEmitter2DEmissionMode.BoundingBox
+			)
 		end
 
 		Emitter3D.Enabled = false
