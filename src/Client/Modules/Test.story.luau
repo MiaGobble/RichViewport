@@ -1,17 +1,6 @@
 local Story = {}
 
 -- Constants
-local CORNER_OFFSETS = {
-	Vector3.new(-1, -1, -1),
-	Vector3.new(-1, -1, 1),
-	Vector3.new(-1, 1, -1),
-	Vector3.new(-1, 1, 1),
-	Vector3.new(1, -1, -1),
-	Vector3.new(1, -1, 1),
-	Vector3.new(1, 1, -1),
-	Vector3.new(1, 1, 1),
-}
-
 local BOUNDS_BACKGROUND_TRANSPARENCY = 0.85
 local BOUNDS_STROKE_TRANSPARENCY = 0
 local VIEWPORT_BACKGROUND_COLOR = Color3.fromRGB(20, 20, 24)
@@ -52,62 +41,39 @@ local function CollectParts(Root : Instance) : {BasePart}
 	return Parts
 end
 
-local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize : Vector2) : (number?, number?, number?, number?, number?)
-	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
-		return nil
-	end
-
-	local HalfSize = Part.Size * 0.5
-	local PartCFrame = Part.CFrame
-
-	local MinX = math.huge
-	local MinY = math.huge
-	local MaxX = -math.huge
-	local MaxY = -math.huge
-	local DepthSum = 0
-	local SampleCount = 0
-
-	for _, Offset in CORNER_OFFSETS do
-		local WorldPoint = PartCFrame:PointToWorldSpace(Offset * HalfSize)
-		local PixelX, PixelY, Depth = ViewportParticles.WorldToViewportPixels(Camera, WorldPoint, PixelSize)
-
-		if not PixelX then
-			continue
-		end
-
-		MinX = math.min(MinX, PixelX)
-		MinY = math.min(MinY, PixelY)
-		MaxX = math.max(MaxX, PixelX)
-		MaxY = math.max(MaxY, PixelY)
-		DepthSum += Depth :: number
-		SampleCount += 1
-	end
-
-	if SampleCount == 0 then
-		return nil
-	end
-
-	return MinX, MinY, MaxX - MinX, MaxY - MinY, DepthSum / SampleCount
-end
-
-local function UpdateLayerFrame(Scope : any, Frame : Frame, Stroke : UIStroke?, X : number, Y : number, Width : number, Height : number, BackgroundTransparency : number, StrokeTransparency : number, ShowStroke : boolean)
+local function UpdateEmitFrame(Scope : any, Frame : Frame, Bounds : ViewportParticles.ScreenBounds)
 	Scope:New(Frame, {
 		Visible = true,
-		Position = UDim2.fromOffset(X, Y),
-		Size = UDim2.fromOffset(math.max(Width, 1), math.max(Height, 1)),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(Bounds.CenterX, Bounds.CenterY),
+		Size = UDim2.fromOffset(Bounds.Width, Bounds.Height),
+		Rotation = 0,
+		BackgroundTransparency = 1,
+		ClipsDescendants = false,
+	})
+end
+
+local function UpdateGuideFrame(Scope : any, Frame : Frame, Stroke : UIStroke?, Bounds : ViewportParticles.OrientedScreenBounds, ShowBounds : boolean)
+	local BackgroundTransparency = if ShowBounds then BOUNDS_BACKGROUND_TRANSPARENCY else 1
+	local StrokeTransparency = if ShowBounds then BOUNDS_STROKE_TRANSPARENCY else 1
+
+	Scope:New(Frame, {
+		Visible = ShowBounds,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(Bounds.CenterX, Bounds.CenterY),
+		Size = UDim2.fromOffset(Bounds.Width, Bounds.Height),
+		Rotation = Bounds.Rotation,
 		BackgroundTransparency = BackgroundTransparency,
 		ClipsDescendants = false,
 	})
 
-	if Stroke and ShowStroke then
-		Scope:New(Stroke, {
-			Transparency = StrokeTransparency,
-		})
-	elseif Stroke then
-		Scope:New(Stroke, {
-			Transparency = 1,
-		})
+	if not Stroke then
+		return
 	end
+
+	Scope:New(Stroke, {
+		Transparency = StrokeTransparency,
+	})
 end
 
 local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : ViewportParticles.PartFrames}, MimicBindings : {ViewportParticles.MimicBinding}, ShowBounds : boolean, ShowParticles : boolean)
@@ -116,36 +82,38 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 		return
 	end
 
-	local BackgroundTransparency = if ShowBounds then BOUNDS_BACKGROUND_TRANSPARENCY else 1
-	local StrokeTransparency = if ShowBounds then BOUNDS_STROKE_TRANSPARENCY else 1
 	local DepthByPart : {[BasePart] : number} = {}
-	local BoundsByPart : {[BasePart] : Rect} = {}
+	local BoundsByPart : {[BasePart] : ViewportParticles.ScreenBounds} = {}
 	local Ranked = {}
 
 	for _, Part in Parts do
 		local Frames = FramesByPart[Part]
-		local FrontStroke = Frames.Front:FindFirstChildWhichIsA("UIStroke")
-		local X, Y, Width, Height, Depth = GetPartScreenBounds(Camera, Part, PixelSize)
+		local GuideStroke = Frames.Guide:FindFirstChildWhichIsA("UIStroke")
+		local PartBounds = ViewportParticles.GetPartScreenBounds(Camera, Part, PixelSize)
 
-		if not X then
+		if not PartBounds then
 			Scope:New(Frames.Front, {Visible = false})
 			Scope:New(Frames.Behind, {Visible = false})
+			Scope:New(Frames.Guide, {Visible = false})
 			continue
 		end
 
-		DepthByPart[Part] = Depth :: number
-		BoundsByPart[Part] = Rect.new(X, Y, X + Width, Y + Height)
+		DepthByPart[Part] = PartBounds.Emit.Depth
+		BoundsByPart[Part] = PartBounds.Emit
 
-		UpdateLayerFrame(Scope, Frames.Front, FrontStroke, X, Y, Width, Height, BackgroundTransparency, StrokeTransparency, true)
-		UpdateLayerFrame(Scope, Frames.Behind, nil, X, Y, Width, Height, 1, 1, false)
+		UpdateEmitFrame(Scope, Frames.Front, PartBounds.Emit)
+		UpdateEmitFrame(Scope, Frames.Behind, PartBounds.Emit)
+		UpdateGuideFrame(Scope, Frames.Guide, GuideStroke, PartBounds.Guide, ShowBounds)
 
 		table.insert(Ranked, {
 			Front = Frames.Front,
 			Behind = Frames.Behind,
-			Depth = Depth :: number,
+			Guide = Frames.Guide,
+			Depth = PartBounds.Emit.Depth,
 		})
 	end
 
+	-- Farthest parts first (low ZIndex); nearest last (high ZIndex) within each overlay.
 	table.sort(Ranked, function(A, B)
 		return A.Depth > B.Depth
 	end)
@@ -153,6 +121,7 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 	for Index, Entry in Ranked do
 		Scope:New(Entry.Behind, {ZIndex = Index})
 		Scope:New(Entry.Front, {ZIndex = Index})
+		Scope:New(Entry.Guide, {ZIndex = Index})
 	end
 
 	ViewportParticles.UpdateMimics(Scope, MimicBindings, Camera, PixelSize, DepthByPart, BoundsByPart, ShowParticles)
@@ -209,6 +178,7 @@ function Story.render(props)
 		local Behind = Scope:New("Frame", {
 			Name = `{Part.Name}_Behind`,
 			Parent = BehindOverlay,
+			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			ClipsDescendants = false,
@@ -218,6 +188,17 @@ function Story.render(props)
 		local Front = Scope:New("Frame", {
 			Name = `{Part.Name}_Front`,
 			Parent = FrontOverlay,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ClipsDescendants = false,
+			Visible = false,
+		})
+
+		local Guide = Scope:New("Frame", {
+			Name = `{Part.Name}_Guide`,
+			Parent = FrontOverlay,
+			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundColor3 = Color3.fromRGB(0, 255, 140),
 			BackgroundTransparency = 0.85,
 			BorderSizePixel = 0,
@@ -235,6 +216,7 @@ function Story.render(props)
 		FramesByPart[Part] = {
 			Front = Front,
 			Behind = Behind,
+			Guide = Guide,
 		}
 	end
 
