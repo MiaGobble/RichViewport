@@ -1,39 +1,15 @@
 --[=[
-	Maps 3D ParticleEmitters onto ParticleEmitter2D instances for ViewportFrame overlays.
+	Maps 3D `ParticleEmitter`s onto `ParticleEmitter2D` mimics for viewport overlays.
 
-	@class ViewportParticles
+	Requires Studio beta **UI Particles**.
+
+	@class Particles
 ]=]
 
-local ViewportParticles = {}
+local Particles = {}
 
-export type PartFrames = {
-	Front : Frame, -- unrotated emission host (screen AABB)
-	Behind : Frame, -- unrotated emission host (screen AABB)
-	Guide : Frame, -- oriented ShowBounds stroke only (no emitters)
-}
-
--- Emission hosts stay Rotation=0. Guide may use Rotation for an oriented debug stroke.
-export type ScreenBounds = {
-	CenterX : number,
-	CenterY : number,
-	Width : number,
-	Height : number,
-	Depth : number,
-}
-
-export type OrientedScreenBounds = {
-	CenterX : number,
-	CenterY : number,
-	Width : number,
-	Height : number,
-	Rotation : number, -- degrees
-	Depth : number,
-}
-
-export type PartScreenBounds = {
-	Emit : ScreenBounds,
-	Guide : OrientedScreenBounds,
-}
+local Spatial = require(script.Parent.Spatial)
+local Overlays = require(script.Parent.Overlays)
 
 export type MimicBinding = {
 	Emitter3D : ParticleEmitter,
@@ -46,19 +22,6 @@ export type MimicBinding = {
 	LockedToPart : boolean,
 }
 
-local CORNER_OFFSETS = {
-	Vector3.new(-1, -1, -1),
-	Vector3.new(-1, -1, 1),
-	Vector3.new(-1, 1, -1),
-	Vector3.new(-1, 1, 1),
-	Vector3.new(1, -1, -1),
-	Vector3.new(1, -1, 1),
-	Vector3.new(1, 1, -1),
-	Vector3.new(1, 1, 1),
-}
-
--- ParticleEmitter Size/Speed are studs; ParticleEmitter2D are pixels.
--- Squash is unitless with the same semantics on both — copy 1:1, do not rescale.
 local function ScaleNumberSequence(Sequence : NumberSequence, Scale : number) : NumberSequence
 	local Keypoints = table.create(#Sequence.Keypoints)
 
@@ -90,185 +53,15 @@ local function GetEmissionWorldDirection(Emitter3D : ParticleEmitter, Part : Bas
 	return GetEmitterCFrame(Part, Attachment):VectorToWorldSpace(LocalDirection)
 end
 
-function ViewportParticles.WorldToViewportPixels(Camera : Camera, WorldPoint : Vector3, PixelSize : Vector2) : (number?, number?, number?)
-	local Relative = Camera.CFrame:PointToObjectSpace(WorldPoint)
-	local Depth = -Relative.Z
+--[=[
+	Copies motion/appearance scales into a mimic for the current camera depth.
 
-	if Depth <= 0 then
-		return nil
-	end
-
-	local AspectRatio = PixelSize.X / PixelSize.Y
-	local HalfHeight = math.tan(math.rad(Camera.FieldOfView) * 0.5) * Depth
-	local HalfWidth = HalfHeight * AspectRatio
-
-	local ScreenX = (Relative.X / HalfWidth * 0.5 + 0.5) * PixelSize.X
-	local ScreenY = (-Relative.Y / HalfHeight * 0.5 + 0.5) * PixelSize.Y
-
-	return ScreenX, ScreenY, Depth
-end
-
-function ViewportParticles.GetPixelsPerStud(Camera : Camera, Depth : number, PixelSize : Vector2) : number
-	if Depth <= 0 or PixelSize.Y <= 0 then
-		return 1
-	end
-
-	local HalfHeight = math.tan(math.rad(Camera.FieldOfView) * 0.5) * Depth
-	return PixelSize.Y / (2 * HalfHeight)
-end
-
-local function FitOrientedBounds(Points : {Vector2}, AngleRadians : number) : (number, number, number, number)
-	local Cos = math.cos(AngleRadians)
-	local Sin = math.sin(AngleRadians)
-
-	local MinX = math.huge
-	local MinY = math.huge
-	local MaxX = -math.huge
-	local MaxY = -math.huge
-
-	for _, Point in Points do
-		-- Rotate by -Angle into the candidate frame's local axes.
-		local LocalX = Point.X * Cos + Point.Y * Sin
-		local LocalY = -Point.X * Sin + Point.Y * Cos
-
-		MinX = math.min(MinX, LocalX)
-		MinY = math.min(MinY, LocalY)
-		MaxX = math.max(MaxX, LocalX)
-		MaxY = math.max(MaxY, LocalY)
-	end
-
-	local Width = MaxX - MinX
-	local Height = MaxY - MinY
-	local LocalCenterX = (MinX + MaxX) * 0.5
-	local LocalCenterY = (MinY + MaxY) * 0.5
-
-	-- Rotate local center back into screen space.
-	local CenterX = LocalCenterX * Cos - LocalCenterY * Sin
-	local CenterY = LocalCenterX * Sin + LocalCenterY * Cos
-
-	return Width, Height, CenterX, CenterY
-end
-
-local function ScreenAngleOfWorldAxis(Camera : Camera, Origin : Vector3, Axis : Vector3, PixelSize : Vector2) : number?
-	local OriginX, OriginY = ViewportParticles.WorldToViewportPixels(Camera, Origin, PixelSize)
-	local TipX, TipY = ViewportParticles.WorldToViewportPixels(Camera, Origin + Axis, PixelSize)
-
-	if not OriginX or not TipX then
-		return nil
-	end
-
-	local DeltaX = (TipX :: number) - (OriginX :: number)
-	local DeltaY = (TipY :: number) - (OriginY :: number)
-
-	if DeltaX * DeltaX + DeltaY * DeltaY <= 1e-6 then
-		return nil
-	end
-
-	return math.atan2(DeltaY, DeltaX)
-end
-
--- Projected part corners → unrotated emission AABB + oriented guide OBB for ShowBounds.
--- Emitters must not parent under a rotating GuiObject: ParticleEmitter2D / LockedToParent
--- inherit Frame.Rotation, and min-area OBB angle snaps mid-drag cause particle glitches.
-function ViewportParticles.GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize : Vector2) : PartScreenBounds?
-	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
-		return nil
-	end
-
-	local HalfSize = Part.Size * 0.5
-	local PartCFrame = Part.CFrame
-	local Points = {}
-	local DepthSum = 0
-	local SampleCount = 0
-
-	local MinX = math.huge
-	local MinY = math.huge
-	local MaxX = -math.huge
-	local MaxY = -math.huge
-
-	for _, Offset in CORNER_OFFSETS do
-		local WorldPoint = PartCFrame:PointToWorldSpace(Offset * HalfSize)
-		local PixelX, PixelY, Depth = ViewportParticles.WorldToViewportPixels(Camera, WorldPoint, PixelSize)
-
-		if not PixelX then
-			continue
-		end
-
-		local Point = Vector2.new(PixelX, PixelY)
-		table.insert(Points, Point)
-		MinX = math.min(MinX, Point.X)
-		MinY = math.min(MinY, Point.Y)
-		MaxX = math.max(MaxX, Point.X)
-		MaxY = math.max(MaxY, Point.Y)
-		DepthSum += Depth :: number
-		SampleCount += 1
-	end
-
-	if SampleCount == 0 then
-		return nil
-	end
-
-	local Depth = DepthSum / SampleCount
-	local EmitWidth = math.max(MaxX - MinX, 1)
-	local EmitHeight = math.max(MaxY - MinY, 1)
-	local EmitCenterX = (MinX + MaxX) * 0.5
-	local EmitCenterY = (MinY + MaxY) * 0.5
-
-	local CandidateAngles = {0}
-	local Origin = PartCFrame.Position
-
-	for _, Axis in {PartCFrame.RightVector, PartCFrame.UpVector, PartCFrame.LookVector} do
-		local Angle = ScreenAngleOfWorldAxis(Camera, Origin, Axis, PixelSize)
-		if Angle then
-			table.insert(CandidateAngles, Angle)
-		end
-	end
-
-	local BestArea = math.huge
-	local BestWidth = EmitWidth
-	local BestHeight = EmitHeight
-	local BestCenterX = EmitCenterX
-	local BestCenterY = EmitCenterY
-	local BestAngle = 0
-
-	for _, Angle in CandidateAngles do
-		local Width, Height, CenterX, CenterY = FitOrientedBounds(Points, Angle)
-		local Area = Width * Height
-
-		if Area < BestArea then
-			BestArea = Area
-			BestWidth = Width
-			BestHeight = Height
-			BestCenterX = CenterX
-			BestCenterY = CenterY
-			BestAngle = Angle
-		end
-	end
-
-	return {
-		Emit = {
-			CenterX = EmitCenterX,
-			CenterY = EmitCenterY,
-			Width = EmitWidth,
-			Height = EmitHeight,
-			Depth = Depth,
-		},
-		Guide = {
-			CenterX = BestCenterX,
-			CenterY = BestCenterY,
-			Width = math.max(BestWidth, 1),
-			Height = math.max(BestHeight, 1),
-			Rotation = math.deg(BestAngle),
-			Depth = Depth,
-		},
-	}
-end
-
-function ViewportParticles.ApplyMotionAndPerspective(Emitter2D : ParticleEmitter2D, Emitter3D : ParticleEmitter, Camera : Camera, PixelsPerStud : number, Part : BasePart, Attachment : Attachment?)
+	@within Particles
+]=]
+function Particles.ApplyMotionAndPerspective(Emitter2D : ParticleEmitter2D, Emitter3D : ParticleEmitter, Camera : Camera, PixelsPerStud : number, Part : BasePart, Attachment : Attachment?)
 	local CameraCFrame = Camera.CFrame
 	local EmissionDirection = GetEmissionWorldDirection(Emitter3D, Part, Attachment)
 
-	-- Same geometric scale for Size and Speed keeps their authored ratio (studs → pixels).
 	Emitter2D.Size = ScaleNumberSequence(Emitter3D.Size, PixelsPerStud)
 	Emitter2D.Speed = ScaleNumberRange(Emitter3D.Speed, PixelsPerStud)
 	Emitter2D.Squash = Emitter3D.Squash
@@ -287,7 +80,6 @@ function ViewportParticles.ApplyMotionAndPerspective(Emitter2D : ParticleEmitter
 	local EmissionAngleDegrees = math.deg(math.atan2(ScreenEmission.Y, ScreenEmission.X))
 	Emitter2D.EmissionAngle = EmissionAngleDegrees
 
-	-- ParticleEmitter2D squash stretches local Y. For VelocityParallel, aim local Y along emission.
 	if Emitter3D.Orientation == Enum.ParticleOrientation.VelocityParallel then
 		local AlignedRotation = EmissionAngleDegrees - 90
 		Emitter2D.Rotation = NumberRange.new(AlignedRotation, AlignedRotation)
@@ -296,7 +88,12 @@ function ViewportParticles.ApplyMotionAndPerspective(Emitter2D : ParticleEmitter
 	end
 end
 
-function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter, Parent : GuiObject, PixelsPerStud : number, RateScale : number?, EmissionMode : Enum.ParticleEmitter2DEmissionMode?) : ParticleEmitter2D
+--[=[
+	Creates a `ParticleEmitter2D` mimic under `Parent`.
+
+	@within Particles
+]=]
+function Particles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter, Parent : GuiObject, PixelsPerStud : number, RateScale : number?, EmissionMode : Enum.ParticleEmitter2DEmissionMode?) : ParticleEmitter2D
 	local ResolvedRateScale = RateScale or 1
 
 	local Emitter2D = Scope:New("ParticleEmitter2D", {
@@ -327,7 +124,6 @@ function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter,
 		FlipbookSizeY = Emitter3D.FlipbookSizeY,
 	})
 
-	-- Camera is not available at create time for full perspective; depth scale only.
 	Emitter2D.Size = ScaleNumberSequence(Emitter3D.Size, PixelsPerStud)
 	Emitter2D.Speed = ScaleNumberRange(Emitter3D.Speed, PixelsPerStud)
 	Emitter2D.Acceleration = Vector2.new(Emitter3D.Acceleration.X, -Emitter3D.Acceleration.Y) * PixelsPerStud
@@ -357,7 +153,7 @@ local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : Pa
 		Parent = HostFrame
 	end
 
-	local Emitter2D = ViewportParticles.CreateMimic(Scope, Emitter3D, Parent, PixelsPerStud, RateScale, EmissionMode)
+	local Emitter2D = Particles.CreateMimic(Scope, Emitter3D, Parent, PixelsPerStud, RateScale, EmissionMode)
 
 	table.insert(Bindings, {
 		Emitter3D = Emitter3D,
@@ -371,9 +167,6 @@ local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : Pa
 	})
 end
 
--- Volume emitters fill projected part bounds (BoundingBox). Most rate goes Behind the
--- ViewportFrame so other 3D parts can occlude them (inter-object depth). A small Front
--- shell keeps near-camera surface sparkle. ZOffset only biases that split.
 local function GetVolumeLayerWeights(ZOffset : number) : (number, number)
 	if ZOffset < 0 then
 		return 0.92, 0.08
@@ -384,7 +177,14 @@ local function GetVolumeLayerWeights(ZOffset : number) : (number, number)
 	return 0.85, 0.15
 end
 
-function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPart : {[BasePart] : PartFrames}, PixelsPerStud : number) : {MimicBinding}
+--[=[
+	Attaches 2D mimics for every `ParticleEmitter` under `Root`, disabling the 3D sources.
+
+	Volume emitters split rate behind/front so ViewportFrame meshes can occlude.
+
+	@within Particles
+]=]
+function Particles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPart : {[BasePart] : Overlays.PartFrames}, PixelsPerStud : number) : {MimicBinding}
 	local Bindings = {}
 
 	for _, Emitter3D in Root:QueryDescendants("ParticleEmitter") do
@@ -448,7 +248,6 @@ function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, Fr
 				Enum.ParticleEmitter2DEmissionMode.BoundingBox
 			)
 		else
-			-- Surface-style: spawn across the silhouette on a single depth layer.
 			local LayerFrame = if ZOffset < 0 then Frames.Behind else Frames.Front
 			local LayerName : "Front" | "Behind" = if ZOffset < 0 then "Behind" else "Front"
 			AddBinding(
@@ -471,8 +270,12 @@ function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, Fr
 	return Bindings
 end
 
-function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera : Camera, PixelSize : Vector2, DepthByPart : {[BasePart] : number}, BoundsByPart : {[BasePart] : ScreenBounds}, ShowParticles : boolean)
-	-- Nearer parts get higher ZIndex so Front-shell particles from close parts cover far ones.
+--[=[
+	Updates enable state, attachment hosts, depth ZIndex, and perspective each frame refresh.
+
+	@within Particles
+]=]
+function Particles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera : Camera, PixelSize : Vector2, DepthByPart : {[BasePart] : number}, BoundsByPart : {[BasePart] : Spatial.ScreenBounds}, ShowParticles : boolean)
 	local PartsByDepth = {}
 	for Part, Depth in DepthByPart do
 		table.insert(PartsByDepth, {Part = Part, Depth = Depth})
@@ -507,10 +310,10 @@ function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, 
 			continue
 		end
 
-		local PixelsPerStud = ViewportParticles.GetPixelsPerStud(Camera, Depth, PixelSize)
+		local PixelsPerStud = Spatial.GetPixelsPerStud(Camera, Depth, PixelSize)
 
 		if Binding.Attachment and Binding.HostFrame then
-			local ScreenX, ScreenY, AttachmentDepth = ViewportParticles.WorldToViewportPixels(
+			local ScreenX, ScreenY, AttachmentDepth = Spatial.WorldToViewportPixels(
 				Camera,
 				Binding.Attachment.WorldPosition,
 				PixelSize
@@ -522,7 +325,7 @@ function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, 
 			end
 
 			if AttachmentDepth then
-				PixelsPerStud = ViewportParticles.GetPixelsPerStud(Camera, AttachmentDepth, PixelSize)
+				PixelsPerStud = Spatial.GetPixelsPerStud(Camera, AttachmentDepth, PixelSize)
 			end
 
 			Scope:New(Binding.HostFrame, {
@@ -534,7 +337,7 @@ function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, 
 			})
 		end
 
-		ViewportParticles.ApplyMotionAndPerspective(
+		Particles.ApplyMotionAndPerspective(
 			Binding.Emitter2D,
 			Binding.Emitter3D,
 			Camera,
@@ -545,4 +348,4 @@ function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, 
 	end
 end
 
-return ViewportParticles
+return Particles
