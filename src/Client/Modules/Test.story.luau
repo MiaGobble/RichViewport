@@ -12,6 +12,9 @@ local CORNER_OFFSETS = {
 	Vector3.new(1, 1, 1),
 }
 
+local BOUNDS_BACKGROUND_TRANSPARENCY = 0.85
+local BOUNDS_STROKE_TRANSPARENCY = 0
+
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -29,6 +32,7 @@ Story.controls = {
 	RotationX = UILabs.Slider(0, -180, 180),
 	RotationY = UILabs.Slider(0, -180, 180),
 	RotationZ = UILabs.Slider(0, -180, 180),
+	ShowBounds = true,
 }
 
 local function CollectParts(Root : Instance) : {BasePart}
@@ -103,16 +107,19 @@ local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize :
 	return MinX, MinY, MaxX - MinX, MaxY - MinY, DepthSum / SampleCount
 end
 
-local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : Frame})
+local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : Frame}, ShowBounds : boolean)
 	local PixelSize = Viewport.AbsoluteSize
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return
 	end
 
+	local BackgroundTransparency = if ShowBounds then BOUNDS_BACKGROUND_TRANSPARENCY else 1
+	local StrokeTransparency = if ShowBounds then BOUNDS_STROKE_TRANSPARENCY else 1
 	local Ranked = {}
 
 	for _, Part in Parts do
 		local Frame = FramesByPart[Part]
+		local Stroke = Frame:FindFirstChildWhichIsA("UIStroke")
 		local X, Y, Width, Height, Depth = GetPartScreenBounds(Camera, Part, PixelSize)
 
 		if not X then
@@ -126,7 +133,14 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 			Visible = true,
 			Position = UDim2.fromOffset(X, Y),
 			Size = UDim2.fromOffset(math.max(Width, 1), math.max(Height, 1)),
+			BackgroundTransparency = BackgroundTransparency,
 		})
+
+		if Stroke then
+			Scope:New(Stroke, {
+				Transparency = StrokeTransparency,
+			})
+		end
 
 		table.insert(Ranked, {
 			Frame = Frame,
@@ -238,7 +252,7 @@ function Story.render(props)
 		Camera.FieldOfView = Controls.FieldOfView.Value
 		Camera.CFrame = CFrame.lookAt(Focus + Vector3.new(0, 0, Controls.CameraDistance.Value), Focus)
 
-		UpdatePartBoundsFrames(Scope, Viewport, Camera, Parts, FramesByPart)
+		UpdatePartBoundsFrames(Scope, Viewport, Camera, Parts, FramesByPart, Controls.ShowBounds.Value)
 	end
 
 	Scope:OnChanged(Viewport, function(Property)
