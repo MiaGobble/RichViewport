@@ -53,38 +53,57 @@ local function GetEmissionWorldDirection(Emitter3D : ParticleEmitter, Part : Bas
 	return GetEmitterCFrame(Part, Attachment):VectorToWorldSpace(LocalDirection)
 end
 
+local function OffsetRotationRange(Range : NumberRange, Degrees : number) : NumberRange
+	return NumberRange.new(Range.Min - Degrees, Range.Max - Degrees)
+end
+
 --[=[
 	Copies motion/appearance scales into a mimic for the current camera depth.
 
+	`FrameRotation` is the emit host's GuiObject.Rotation. EmissionAngle / Acceleration /
+	sprite Rotation are converted into parent-local space so AbsoluteRotation does not
+	yaw particles relative to the screen.
+
 	@within Particles
 ]=]
-function Particles.ApplyMotionAndPerspective(Emitter2D : ParticleEmitter2D, Emitter3D : ParticleEmitter, Camera : Camera, PixelsPerStud : number, Part : BasePart, Attachment : Attachment?)
+function Particles.ApplyMotionAndPerspective(Emitter2D : ParticleEmitter2D, Emitter3D : ParticleEmitter, Camera : Camera, PixelsPerStud : number, Part : BasePart, Attachment : Attachment?, FrameRotation : number?)
 	local CameraCFrame = Camera.CFrame
 	local EmissionDirection = GetEmissionWorldDirection(Emitter3D, Part, Attachment)
+	local ParentRotation = FrameRotation or 0
 
 	Emitter2D.Size = ScaleNumberSequence(Emitter3D.Size, PixelsPerStud)
 	Emitter2D.Speed = ScaleNumberRange(Emitter3D.Speed, PixelsPerStud)
 	Emitter2D.Squash = Emitter3D.Squash
 
 	local AccelerationCamera = CameraCFrame:VectorToObjectSpace(Emitter3D.Acceleration)
-	Emitter2D.Acceleration = Vector2.new(AccelerationCamera.X, -AccelerationCamera.Y) * PixelsPerStud
+	local ScreenAcceleration = Vector2.new(AccelerationCamera.X, -AccelerationCamera.Y) * PixelsPerStud
+	local RotationRadians = math.rad(ParentRotation)
+	local Cos = math.cos(RotationRadians)
+	local Sin = math.sin(RotationRadians)
+
+	Emitter2D.Acceleration = Vector2.new(
+		ScreenAcceleration.X * Cos + ScreenAcceleration.Y * Sin,
+		-ScreenAcceleration.X * Sin + ScreenAcceleration.Y * Cos
+	)
 
 	local EmissionCamera = CameraCFrame:VectorToObjectSpace(EmissionDirection)
 	local ScreenEmission = Vector2.new(EmissionCamera.X, -EmissionCamera.Y)
 
 	if ScreenEmission.Magnitude <= 1e-4 then
-		Emitter2D.Rotation = Emitter3D.Rotation
+		Emitter2D.Rotation = OffsetRotationRange(Emitter3D.Rotation, ParentRotation)
 		return
 	end
 
-	local EmissionAngleDegrees = math.deg(math.atan2(ScreenEmission.Y, ScreenEmission.X))
-	Emitter2D.EmissionAngle = EmissionAngleDegrees
+	local ScreenEmissionAngle = math.deg(math.atan2(ScreenEmission.Y, ScreenEmission.X))
+	local LocalEmissionAngle = ScreenEmissionAngle - ParentRotation
+	Emitter2D.EmissionAngle = LocalEmissionAngle
 
 	if Emitter3D.Orientation == Enum.ParticleOrientation.VelocityParallel then
-		local AlignedRotation = EmissionAngleDegrees - 90
+		-- Squash stretches local Y; aim that axis along emission in parent space.
+		local AlignedRotation = LocalEmissionAngle - 90
 		Emitter2D.Rotation = NumberRange.new(AlignedRotation, AlignedRotation)
 	else
-		Emitter2D.Rotation = Emitter3D.Rotation
+		Emitter2D.Rotation = OffsetRotationRange(Emitter3D.Rotation, ParentRotation)
 	end
 end
 
@@ -275,7 +294,7 @@ end
 
 	@within Particles
 ]=]
-function Particles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera : Camera, PixelSize : Vector2, DepthByPart : {[BasePart] : number}, BoundsByPart : {[BasePart] : Spatial.ScreenBounds}, ShowParticles : boolean)
+function Particles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera : Camera, PixelSize : Vector2, DepthByPart : {[BasePart] : number}, BoundsByPart : {[BasePart] : Spatial.LayerBounds}, ShowParticles : boolean)
 	local PartsByDepth = {}
 	for Part, Depth in DepthByPart do
 		table.insert(PartsByDepth, {Part = Part, Depth = Depth})
@@ -328,12 +347,17 @@ function Particles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera :
 				PixelsPerStud = Spatial.GetPixelsPerStud(Camera, AttachmentDepth, PixelSize)
 			end
 
+			local DeltaX = (ScreenX :: number) - Bounds.CenterX
+			local DeltaY = (ScreenY :: number) - Bounds.CenterY
+			local RotationRadians = math.rad(Bounds.Rotation)
+			local Cos = math.cos(RotationRadians)
+			local Sin = math.sin(RotationRadians)
+			local LocalX = DeltaX * Cos + DeltaY * Sin
+			local LocalY = -DeltaX * Sin + DeltaY * Cos
+
 			Scope:New(Binding.HostFrame, {
 				Visible = true,
-				Position = UDim2.fromOffset(
-					(ScreenX :: number) - Bounds.CenterX + Bounds.Width * 0.5,
-					(ScreenY :: number) - Bounds.CenterY + Bounds.Height * 0.5
-				),
+				Position = UDim2.fromOffset(LocalX + Bounds.Width * 0.5, LocalY + Bounds.Height * 0.5),
 			})
 		end
 
@@ -343,7 +367,8 @@ function Particles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera :
 			Camera,
 			PixelsPerStud,
 			Binding.Part,
-			Binding.Attachment
+			Binding.Attachment,
+			Bounds.Rotation
 		)
 	end
 end

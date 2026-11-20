@@ -49,6 +49,7 @@ type Fields = {
 	_CameraWatchScope : any?,
 	_Assigning : boolean,
 	_StructureDirty : boolean,
+	_LayerRotationByPart : {[BasePart] : number},
 }
 
 export type RichViewport = setmetatable<Fields, typeof(RichViewport)>
@@ -107,11 +108,12 @@ function RichViewport.new(Object : Instance, Camera : Camera, Parent : GuiObject
 		_CameraWatchScope = nil,
 		_Assigning = false,
 		_StructureDirty = false,
+		_LayerRotationByPart = {},
 	}
 
 	local InstanceObject = setmetatable(Self, RichViewport)
 
-	Scope:OnChanged(Stack.Viewport, function(Property)
+	Scope:OnChanged(Stack.Root, function(Property)
 		if Property ~= "AbsoluteSize" then
 			return
 		end
@@ -141,14 +143,16 @@ function RichViewport.Refresh(self : RichViewport)
 		return
 	end
 
-	local PixelSize = self.ViewportFrame.AbsoluteSize
+	-- Project in root pixel space so Behind/Front overlays share the same origin as the viewport.
+	local PixelSize = self._Root.AbsoluteSize
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return
 	end
 
 	local DepthByPart : {[BasePart] : number} = {}
-	local BoundsByPart : {[BasePart] : Spatial.ScreenBounds} = {}
+	local BoundsByPart : {[BasePart] : Spatial.LayerBounds} = {}
 	local Ranked = {}
+	local NextRotations : {[BasePart] : number} = {}
 
 	for Part, Frames in self._FramesByPart do
 		if not Part.Parent then
@@ -156,27 +160,32 @@ function RichViewport.Refresh(self : RichViewport)
 			continue
 		end
 
-		local PartBounds = Spatial.GetPartScreenBounds(self.Camera, Part, PixelSize)
-		if not PartBounds then
+		local LayerBounds = Spatial.GetPartLayerBounds(
+			self.Camera,
+			Part,
+			PixelSize,
+			self._LayerRotationByPart[Part]
+		)
+
+		if not LayerBounds then
 			Overlays.HidePartFrames(self.Scope, Frames)
 			continue
 		end
 
-		DepthByPart[Part] = PartBounds.Emit.Depth
-		BoundsByPart[Part] = PartBounds.Emit
+		NextRotations[Part] = LayerBounds.Rotation
+		DepthByPart[Part] = LayerBounds.Depth
+		BoundsByPart[Part] = LayerBounds
 
-		Overlays.UpdateEmitFrame(self.Scope, Frames.Front, PartBounds.Emit)
-		Overlays.UpdateEmitFrame(self.Scope, Frames.Behind, PartBounds.Emit)
-		Overlays.UpdateGuideFrame(self.Scope, Frames.Guide, PartBounds.Guide, self._DebugVisible)
+		Overlays.UpdatePartFrames(self.Scope, Frames, LayerBounds, self._DebugVisible)
 
 		table.insert(Ranked, {
 			Front = Frames.Front,
 			Behind = Frames.Behind,
-			Guide = Frames.Guide,
-			Depth = PartBounds.Emit.Depth,
+			Depth = LayerBounds.Depth,
 		})
 	end
 
+	self._LayerRotationByPart = NextRotations
 	Overlays.ApplyDepthRanking(self.Scope, Ranked)
 
 	Particles.UpdateMimics(
@@ -380,6 +389,7 @@ function RichViewport._RebuildContent(self : RichViewport)
 	self._ContentScope = ContentScope
 	self._FramesByPart = {}
 	self._MimicBindings = {}
+	self._LayerRotationByPart = {}
 
 	local Parts = Spatial.CollectParts(self.Object)
 

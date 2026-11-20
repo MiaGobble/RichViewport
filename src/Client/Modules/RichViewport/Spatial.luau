@@ -6,26 +6,14 @@
 
 local Spatial = {}
 
-export type ScreenBounds = {
+-- Single layer bounds used for Behind, Front, and Guide together.
+export type LayerBounds = {
 	CenterX : number,
 	CenterY : number,
 	Width : number,
 	Height : number,
+	Rotation : number, -- degrees
 	Depth : number,
-}
-
-export type OrientedScreenBounds = {
-	CenterX : number,
-	CenterY : number,
-	Width : number,
-	Height : number,
-	Rotation : number,
-	Depth : number,
-}
-
-export type PartScreenBounds = {
-	Emit : ScreenBounds,
-	Guide : OrientedScreenBounds,
 }
 
 local CORNER_OFFSETS = {
@@ -38,6 +26,8 @@ local CORNER_OFFSETS = {
 	Vector3.new(1, 1, -1),
 	Vector3.new(1, 1, 1),
 }
+
+local AREA_KEEP_RATIO = 1.12
 
 --[=[
 	Collects every `BasePart` under `Root`, including `Root` itself when applicable.
@@ -161,14 +151,20 @@ local function ScreenAngleOfWorldAxis(Camera : Camera, Origin : Vector3, Axis : 
 	return math.atan2(DeltaY, DeltaX)
 end
 
---[=[
-	Projects a part to an unrotated emission AABB plus an oriented debug guide OBB.
+local function ShortestAngleDeltaDegrees(From : number, To : number) : number
+	local Delta = (To - From + 180) % 360 - 180
+	return Delta
+end
 
-	Emitters must use the AABB (`Emit`). Guide frames may use `Guide.Rotation`.
+--[=[
+	Oriented screen bounds for a part (shared by emit + debug layers).
+
+	`PreviousRotation` keeps the angle stable across refreshes so layers and
+	`LockedToParent` particles do not snap when face-axis candidates trade places.
 
 	@within Spatial
 ]=]
-function Spatial.GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize : Vector2) : PartScreenBounds?
+function Spatial.GetPartLayerBounds(Camera : Camera, Part : BasePart, PixelSize : Vector2, PreviousRotation : number?) : LayerBounds?
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return nil
 	end
@@ -179,11 +175,6 @@ function Spatial.GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize
 	local DepthSum = 0
 	local SampleCount = 0
 
-	local MinX = math.huge
-	local MinY = math.huge
-	local MaxX = -math.huge
-	local MaxY = -math.huge
-
 	for _, Offset in CORNER_OFFSETS do
 		local WorldPoint = PartCFrame:PointToWorldSpace(Offset * HalfSize)
 		local PixelX, PixelY, Depth = Spatial.WorldToViewportPixels(Camera, WorldPoint, PixelSize)
@@ -192,12 +183,7 @@ function Spatial.GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize
 			continue
 		end
 
-		local Point = Vector2.new(PixelX, PixelY)
-		table.insert(Points, Point)
-		MinX = math.min(MinX, Point.X)
-		MinY = math.min(MinY, Point.Y)
-		MaxX = math.max(MaxX, Point.X)
-		MaxY = math.max(MaxY, Point.Y)
+		table.insert(Points, Vector2.new(PixelX, PixelY))
 		DepthSum += Depth :: number
 		SampleCount += 1
 	end
@@ -207,13 +193,12 @@ function Spatial.GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize
 	end
 
 	local Depth = DepthSum / SampleCount
-	local EmitWidth = math.max(MaxX - MinX, 1)
-	local EmitHeight = math.max(MaxY - MinY, 1)
-	local EmitCenterX = (MinX + MaxX) * 0.5
-	local EmitCenterY = (MinY + MaxY) * 0.5
-
-	local CandidateAngles = {0}
 	local Origin = PartCFrame.Position
+	local CandidateAngles = {}
+
+	if PreviousRotation ~= nil then
+		table.insert(CandidateAngles, math.rad(PreviousRotation))
+	end
 
 	for _, Axis in {PartCFrame.RightVector, PartCFrame.UpVector, PartCFrame.LookVector} do
 		local Angle = ScreenAngleOfWorldAxis(Camera, Origin, Axis, PixelSize)
@@ -222,12 +207,16 @@ function Spatial.GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize
 		end
 	end
 
+	if #CandidateAngles == 0 then
+		table.insert(CandidateAngles, 0)
+	end
+
 	local BestArea = math.huge
-	local BestWidth = EmitWidth
-	local BestHeight = EmitHeight
-	local BestCenterX = EmitCenterX
-	local BestCenterY = EmitCenterY
-	local BestAngle = 0
+	local BestWidth = 1
+	local BestHeight = 1
+	local BestCenterX = Points[1].X
+	local BestCenterY = Points[1].Y
+	local BestAngle = CandidateAngles[1]
 
 	for _, Angle in CandidateAngles do
 		local Width, Height, CenterX, CenterY = FitOrientedBounds(Points, Angle)
@@ -243,22 +232,70 @@ function Spatial.GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize
 		end
 	end
 
+	-- Prefer the previous angle when it stays near-optimal (avoids 90° snaps).
+	if PreviousRotation ~= nil then
+		local PreviousRadians = math.rad(PreviousRotation)
+		local Width, Height, CenterX, CenterY = FitOrientedBounds(Points, PreviousRadians)
+		local PreviousArea = Width * Height
+
+		if PreviousArea <= BestArea * AREA_KEEP_RATIO then
+			BestArea = PreviousArea
+			BestWidth = Width
+			BestHeight = Height
+			BestCenterX = CenterX
+			BestCenterY = CenterY
+			BestAngle = PreviousRadians
+		else
+			local BestDelta = math.huge
+			local StableAngle = BestAngle
+			local StableWidth = BestWidth
+			local StableHeight = BestHeight
+			local StableCenterX = BestCenterX
+			local StableCenterY = BestCenterY
+
+			for _, Angle in CandidateAngles do
+				local WidthCandidate, HeightCandidate, CenterXCandidate, CenterYCandidate = FitOrientedBounds(Points, Angle)
+				local Area = WidthCandidate * HeightCandidate
+
+				if Area > BestArea * AREA_KEEP_RATIO then
+					continue
+				end
+
+				local Degrees = math.deg(Angle)
+				local Delta = math.abs(ShortestAngleDeltaDegrees(PreviousRotation, Degrees))
+
+				if Delta < BestDelta then
+					BestDelta = Delta
+					StableAngle = Angle
+					StableWidth = WidthCandidate
+					StableHeight = HeightCandidate
+					StableCenterX = CenterXCandidate
+					StableCenterY = CenterYCandidate
+				end
+			end
+
+			BestAngle = StableAngle
+			BestWidth = StableWidth
+			BestHeight = StableHeight
+			BestCenterX = StableCenterX
+			BestCenterY = StableCenterY
+		end
+	end
+
+	local RotationDegrees = math.deg(BestAngle)
+
+	if PreviousRotation ~= nil then
+		-- Unwrap so Rotation is continuous for GuiObject + LockedToParent.
+		RotationDegrees = PreviousRotation + ShortestAngleDeltaDegrees(PreviousRotation, RotationDegrees)
+	end
+
 	return {
-		Emit = {
-			CenterX = EmitCenterX,
-			CenterY = EmitCenterY,
-			Width = EmitWidth,
-			Height = EmitHeight,
-			Depth = Depth,
-		},
-		Guide = {
-			CenterX = BestCenterX,
-			CenterY = BestCenterY,
-			Width = math.max(BestWidth, 1),
-			Height = math.max(BestHeight, 1),
-			Rotation = math.deg(BestAngle),
-			Depth = Depth,
-		},
+		CenterX = BestCenterX,
+		CenterY = BestCenterY,
+		Width = math.max(BestWidth, 1),
+		Height = math.max(BestHeight, 1),
+		Rotation = RotationDegrees,
+		Depth = Depth,
 	}
 end
 

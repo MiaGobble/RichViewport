@@ -81,7 +81,7 @@ function Overlays.CreateStack(Scope : any, Parent : GuiObject, Camera : Camera) 
 end
 
 --[=[
-	Creates unrotated emission hosts plus an oriented debug guide for one part.
+	Creates Front/Behind emission hosts. Guide is nested under Front so it cannot desync.
 
 	@within Overlays
 ]=]
@@ -108,8 +108,10 @@ function Overlays.CreatePartFrames(Scope : any, Part : BasePart, BehindOverlay :
 
 	local Guide = Scope:New("Frame", {
 		Name = `{Part.Name}_Guide`,
-		Parent = FrontOverlay,
+		Parent = Front,
 		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = GUIDE_COLOR,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -132,39 +134,38 @@ function Overlays.CreatePartFrames(Scope : any, Part : BasePart, BehindOverlay :
 	}
 end
 
---[=[
-	Positions an unrotated emission host from screen AABB bounds.
-
-	@within Overlays
-]=]
-function Overlays.UpdateEmitFrame(Scope : any, Frame : Frame, Bounds : Spatial.ScreenBounds)
+local function ApplyLayerTransform(Scope : any, Frame : Frame, Bounds : Spatial.LayerBounds)
 	Scope:New(Frame, {
 		Visible = true,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromOffset(Bounds.CenterX, Bounds.CenterY),
 		Size = UDim2.fromOffset(Bounds.Width, Bounds.Height),
-		Rotation = 0,
+		Rotation = Bounds.Rotation,
 		BackgroundTransparency = 1,
 		ClipsDescendants = false,
 	})
 end
 
 --[=[
-	Positions the oriented debug guide. Hidden when `ShowDebug` is false.
+	Applies the same layer bounds to Front and Behind. Guide stays nested full-size on Front.
 
 	@within Overlays
 ]=]
-function Overlays.UpdateGuideFrame(Scope : any, Frame : Frame, Bounds : Spatial.OrientedScreenBounds, ShowDebug : boolean)
+function Overlays.UpdatePartFrames(Scope : any, Frames : PartFrames, Bounds : Spatial.LayerBounds, ShowDebug : boolean)
+	ApplyLayerTransform(Scope, Frames.Front, Bounds)
+	ApplyLayerTransform(Scope, Frames.Behind, Bounds)
+
 	local BackgroundTransparency = if ShowDebug then BOUNDS_BACKGROUND_TRANSPARENCY else 1
 	local StrokeTransparency = if ShowDebug then BOUNDS_STROKE_TRANSPARENCY else 1
-	local Stroke = Frame:FindFirstChildWhichIsA("UIStroke")
+	local Stroke = Frames.Guide:FindFirstChildWhichIsA("UIStroke")
 
-	Scope:New(Frame, {
+	Scope:New(Frames.Guide, {
 		Visible = ShowDebug,
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(Bounds.CenterX, Bounds.CenterY),
-		Size = UDim2.fromOffset(Bounds.Width, Bounds.Height),
-		Rotation = Bounds.Rotation,
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		Rotation = 0,
+		BackgroundColor3 = GUIDE_COLOR,
 		BackgroundTransparency = BackgroundTransparency,
 		ClipsDescendants = false,
 	})
@@ -192,7 +193,7 @@ end
 
 	@within Overlays
 ]=]
-function Overlays.ApplyDepthRanking(Scope : any, Ranked : {{Front : Frame, Behind : Frame, Guide : Frame, Depth : number}})
+function Overlays.ApplyDepthRanking(Scope : any, Ranked : {{Front : Frame, Behind : Frame, Depth : number}})
 	table.sort(Ranked, function(A, B)
 		return A.Depth > B.Depth
 	end)
@@ -200,7 +201,6 @@ function Overlays.ApplyDepthRanking(Scope : any, Ranked : {{Front : Frame, Behin
 	for Index, Entry in Ranked do
 		Scope:New(Entry.Behind, {ZIndex = Index})
 		Scope:New(Entry.Front, {ZIndex = Index})
-		Scope:New(Entry.Guide, {ZIndex = Index})
 	end
 end
 
