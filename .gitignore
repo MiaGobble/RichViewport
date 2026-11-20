@@ -11,6 +11,7 @@ build.rbxl
 /luau_packages
 /lune_packages
 /.pesde
+pesde.lock
 
 # Rojo
 sourcemap.json
