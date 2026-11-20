@@ -16,6 +16,8 @@ export type MimicBinding = {
 	Emitter2D : ParticleEmitter2D,
 	Part : BasePart,
 	Layer : "Front" | "Behind",
+	Attachment : Attachment?,
+	HostFrame : Frame?,
 }
 
 local function ScaleNumberSequence(Sequence : NumberSequence, Scale : number) : NumberSequence
@@ -34,6 +36,24 @@ end
 
 local function ScaleNumberRange(Range : NumberRange, Scale : number) : NumberRange
 	return NumberRange.new(Range.Min * Scale, Range.Max * Scale)
+end
+
+function ViewportParticles.WorldToViewportPixels(Camera : Camera, WorldPoint : Vector3, PixelSize : Vector2) : (number?, number?, number?)
+	local Relative = Camera.CFrame:PointToObjectSpace(WorldPoint)
+	local Depth = -Relative.Z
+
+	if Depth <= 0 then
+		return nil
+	end
+
+	local AspectRatio = PixelSize.X / PixelSize.Y
+	local HalfHeight = math.tan(math.rad(Camera.FieldOfView) * 0.5) * Depth
+	local HalfWidth = HalfHeight * AspectRatio
+
+	local ScreenX = (Relative.X / HalfWidth * 0.5 + 0.5) * PixelSize.X
+	local ScreenY = (-Relative.Y / HalfHeight * 0.5 + 0.5) * PixelSize.Y
+
+	return ScreenX, ScreenY, Depth
 end
 
 function ViewportParticles.GetPixelsPerStud(Camera : Camera, Depth : number, PixelSize : Vector2) : number
@@ -55,7 +75,7 @@ function ViewportParticles.ApplyScale(Emitter2D : ParticleEmitter2D, Emitter3D :
 	Emitter2D.Acceleration = Vector2.new(Acceleration.X, -Acceleration.Y) * PixelsPerStud
 end
 
-function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter, Parent : GuiObject, PixelsPerStud : number, RateScale : number?) : ParticleEmitter2D
+function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter, Parent : GuiObject, PixelsPerStud : number, RateScale : number?, EmissionMode : Enum.ParticleEmitter2DEmissionMode?) : ParticleEmitter2D
 	local ResolvedRateScale = RateScale or 1
 
 	local Emitter2D = Scope:New("ParticleEmitter2D", {
@@ -75,7 +95,7 @@ function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter,
 		Squash = Emitter3D.Squash,
 		Blend = Emitter3D.LightEmission,
 		LockedToParent = Emitter3D.LockedToPart,
-		EmissionMode = Enum.ParticleEmitter2DEmissionMode.BoundingBox,
+		EmissionMode = EmissionMode or Enum.ParticleEmitter2DEmissionMode.BoundingBox,
 		SpreadAngle = math.max(math.abs(Emitter3D.SpreadAngle.X), math.abs(Emitter3D.SpreadAngle.Y)),
 		FlipbookLayout = Emitter3D.FlipbookLayout,
 		FlipbookMode = Emitter3D.FlipbookMode,
@@ -91,14 +111,41 @@ function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter,
 	return Emitter2D
 end
 
-local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : ParticleEmitter, Part : BasePart, Frame : Frame, Layer : "Front" | "Behind", PixelsPerStud : number, RateScale : number)
-	local Emitter2D = ViewportParticles.CreateMimic(Scope, Emitter3D, Frame, PixelsPerStud, RateScale)
+local function CreateAttachmentHost(Scope : any, Parent : Frame, Name : string) : Frame
+	return Scope:New("Frame", {
+		Name = Name,
+		Parent = Parent,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ClipsDescendants = false,
+	})
+end
+
+local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : ParticleEmitter, Part : BasePart, BoundsFrame : Frame, Layer : "Front" | "Behind", PixelsPerStud : number, RateScale : number, Attachment : Attachment?)
+	local HostFrame = nil
+	local Parent = BoundsFrame
+
+	if Attachment then
+		HostFrame = CreateAttachmentHost(Scope, BoundsFrame, `{Emitter3D.Name}_Point`)
+		Parent = HostFrame
+	end
+
+	local EmissionMode = if Attachment
+		then Enum.ParticleEmitter2DEmissionMode.Point
+		else Enum.ParticleEmitter2DEmissionMode.BoundingBox
+
+	local Emitter2D = ViewportParticles.CreateMimic(Scope, Emitter3D, Parent, PixelsPerStud, RateScale, EmissionMode)
 
 	table.insert(Bindings, {
 		Emitter3D = Emitter3D,
 		Emitter2D = Emitter2D,
 		Part = Part,
 		Layer = Layer,
+		Attachment = Attachment,
+		HostFrame = HostFrame,
 	})
 end
 
@@ -116,16 +163,20 @@ function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, Fr
 			continue
 		end
 
+		local Attachment = if Emitter3D.Parent and Emitter3D.Parent:IsA("Attachment")
+			then Emitter3D.Parent
+			else nil
+
 		local ZOffset = Emitter3D.ZOffset
 
 		if ZOffset < 0 then
-			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 1)
+			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 1, Attachment)
 		elseif ZOffset > 0 then
-			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 1)
+			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 1, Attachment)
 		else
 			-- No authored offset: approximate volume depth by splitting across both layers.
-			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 0.5)
-			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 0.5)
+			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 0.5, Attachment)
+			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 0.5, Attachment)
 		end
 
 		Emitter3D.Enabled = false
@@ -134,15 +185,41 @@ function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, Fr
 	return Bindings
 end
 
-function ViewportParticles.UpdateMimicScales(Bindings : {MimicBinding}, Camera : Camera, PixelSize : Vector2, DepthByPart : {[BasePart] : number})
+function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera : Camera, PixelSize : Vector2, DepthByPart : {[BasePart] : number}, BoundsByPart : {[BasePart] : Rect})
 	for _, Binding in Bindings do
 		local Depth = DepthByPart[Binding.Part]
-		if not Depth then
+		local Bounds = BoundsByPart[Binding.Part]
+		if not Depth or not Bounds then
 			continue
 		end
 
 		local PixelsPerStud = ViewportParticles.GetPixelsPerStud(Camera, Depth, PixelSize)
 		ViewportParticles.ApplyScale(Binding.Emitter2D, Binding.Emitter3D, PixelsPerStud)
+
+		if not Binding.Attachment or not Binding.HostFrame then
+			continue
+		end
+
+		local ScreenX, ScreenY, AttachmentDepth = ViewportParticles.WorldToViewportPixels(
+			Camera,
+			Binding.Attachment.WorldPosition,
+			PixelSize
+		)
+
+		if not ScreenX then
+			Scope:New(Binding.HostFrame, {Visible = false})
+			continue
+		end
+
+		if AttachmentDepth then
+			PixelsPerStud = ViewportParticles.GetPixelsPerStud(Camera, AttachmentDepth, PixelSize)
+			ViewportParticles.ApplyScale(Binding.Emitter2D, Binding.Emitter3D, PixelsPerStud)
+		end
+
+		Scope:New(Binding.HostFrame, {
+			Visible = true,
+			Position = UDim2.fromOffset(ScreenX - Bounds.Min.X, ScreenY - Bounds.Min.Y),
+		})
 	end
 end
 

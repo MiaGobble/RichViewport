@@ -51,26 +51,6 @@ local function CollectParts(Root : Instance) : {BasePart}
 	return Parts
 end
 
--- ViewportFrame cameras keep ViewportSize at (1, 1), so WorldToViewportPoint
--- projects with a wrong aspect ratio. Project manually against AbsoluteSize instead.
-local function WorldToViewportPixels(Camera : Camera, WorldPoint : Vector3, PixelSize : Vector2) : (number?, number?, number?)
-	local Relative = Camera.CFrame:PointToObjectSpace(WorldPoint)
-	local Depth = -Relative.Z
-
-	if Depth <= 0 then
-		return nil
-	end
-
-	local AspectRatio = PixelSize.X / PixelSize.Y
-	local HalfHeight = math.tan(math.rad(Camera.FieldOfView) * 0.5) * Depth
-	local HalfWidth = HalfHeight * AspectRatio
-
-	local ScreenX = (Relative.X / HalfWidth * 0.5 + 0.5) * PixelSize.X
-	local ScreenY = (-Relative.Y / HalfHeight * 0.5 + 0.5) * PixelSize.Y
-
-	return ScreenX, ScreenY, Depth
-end
-
 local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize : Vector2) : (number?, number?, number?, number?, number?)
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return nil
@@ -88,7 +68,7 @@ local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize :
 
 	for _, Offset in CORNER_OFFSETS do
 		local WorldPoint = PartCFrame:PointToWorldSpace(Offset * HalfSize)
-		local PixelX, PixelY, Depth = WorldToViewportPixels(Camera, WorldPoint, PixelSize)
+		local PixelX, PixelY, Depth = ViewportParticles.WorldToViewportPixels(Camera, WorldPoint, PixelSize)
 
 		if not PixelX then
 			continue
@@ -138,6 +118,7 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 	local BackgroundTransparency = if ShowBounds then BOUNDS_BACKGROUND_TRANSPARENCY else 1
 	local StrokeTransparency = if ShowBounds then BOUNDS_STROKE_TRANSPARENCY else 1
 	local DepthByPart : {[BasePart] : number} = {}
+	local BoundsByPart : {[BasePart] : Rect} = {}
 	local Ranked = {}
 
 	for _, Part in Parts do
@@ -152,6 +133,7 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 		end
 
 		DepthByPart[Part] = Depth :: number
+		BoundsByPart[Part] = Rect.new(X, Y, X + Width, Y + Height)
 
 		UpdateLayerFrame(Scope, Frames.Front, FrontStroke, X, Y, Width, Height, BackgroundTransparency, StrokeTransparency, true)
 		UpdateLayerFrame(Scope, Frames.Behind, nil, X, Y, Width, Height, 1, 1, false)
@@ -172,7 +154,7 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 		Scope:New(Entry.Front, {ZIndex = Index})
 	end
 
-	ViewportParticles.UpdateMimicScales(MimicBindings, Camera, PixelSize, DepthByPart)
+	ViewportParticles.UpdateMimics(Scope, MimicBindings, Camera, PixelSize, DepthByPart, BoundsByPart)
 end
 
 function Story.render(props)
