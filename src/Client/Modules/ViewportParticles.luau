@@ -21,8 +21,8 @@ export type MimicBinding = {
 	WasEnabled : boolean,
 }
 
-local PERSPECTIVE_SQUASH_STRENGTH = 1.25
-
+-- ParticleEmitter Size/Speed are studs; ParticleEmitter2D are pixels.
+-- Squash is unitless with the same semantics on both — copy 1:1, do not rescale.
 local function ScaleNumberSequence(Sequence : NumberSequence, Scale : number) : NumberSequence
 	local Keypoints = table.create(#Sequence.Keypoints)
 
@@ -31,20 +31,6 @@ local function ScaleNumberSequence(Sequence : NumberSequence, Scale : number) : 
 			Keypoint.Time,
 			Keypoint.Value * Scale,
 			Keypoint.Envelope * Scale
-		)
-	end
-
-	return NumberSequence.new(Keypoints)
-end
-
-local function OffsetNumberSequence(Sequence : NumberSequence, Offset : number) : NumberSequence
-	local Keypoints = table.create(#Sequence.Keypoints)
-
-	for Index, Keypoint in Sequence.Keypoints do
-		Keypoints[Index] = NumberSequenceKeypoint.new(
-			Keypoint.Time,
-			Keypoint.Value + Offset,
-			Keypoint.Envelope
 		)
 	end
 
@@ -98,29 +84,31 @@ end
 function ViewportParticles.ApplyMotionAndPerspective(Emitter2D : ParticleEmitter2D, Emitter3D : ParticleEmitter, Camera : Camera, PixelsPerStud : number, Part : BasePart, Attachment : Attachment?)
 	local CameraCFrame = Camera.CFrame
 	local EmissionDirection = GetEmissionWorldDirection(Emitter3D, Part, Attachment)
-	local ViewDot = math.abs(EmissionDirection:Dot(CameraCFrame.LookVector))
-	local Foreshortening = math.clamp(1 - ViewDot, 0, 1)
 
-	-- Depth scale for stud → pixel motion/size.
+	-- Same geometric scale for Size and Speed keeps their authored ratio (studs → pixels).
 	Emitter2D.Size = ScaleNumberSequence(Emitter3D.Size, PixelsPerStud)
 	Emitter2D.Speed = ScaleNumberRange(Emitter3D.Speed, PixelsPerStud)
+	Emitter2D.Squash = Emitter3D.Squash
 
-	-- Acceleration into camera space (screen Y is down).
 	local AccelerationCamera = CameraCFrame:VectorToObjectSpace(Emitter3D.Acceleration)
 	Emitter2D.Acceleration = Vector2.new(AccelerationCamera.X, -AccelerationCamera.Y) * PixelsPerStud
 
-	-- Authored squash plus extra flatten when the emission axis is edge-on to the camera.
-	Emitter2D.Squash = OffsetNumberSequence(
-		Emitter3D.Squash,
-		Foreshortening * PERSPECTIVE_SQUASH_STRENGTH
-	)
-
-	-- Aim 2D emission along the projected 3D emission axis.
 	local EmissionCamera = CameraCFrame:VectorToObjectSpace(EmissionDirection)
 	local ScreenEmission = Vector2.new(EmissionCamera.X, -EmissionCamera.Y)
 
-	if ScreenEmission.Magnitude > 1e-4 then
-		Emitter2D.EmissionAngle = math.deg(math.atan2(ScreenEmission.Y, ScreenEmission.X))
+	if ScreenEmission.Magnitude <= 1e-4 then
+		return
+	end
+
+	local EmissionAngleDegrees = math.deg(math.atan2(ScreenEmission.Y, ScreenEmission.X))
+	Emitter2D.EmissionAngle = EmissionAngleDegrees
+
+	-- ParticleEmitter2D squash stretches local Y. For VelocityParallel, aim local Y along emission.
+	if Emitter3D.Orientation == Enum.ParticleOrientation.VelocityParallel then
+		local AlignedRotation = EmissionAngleDegrees - 90
+		Emitter2D.Rotation = NumberRange.new(AlignedRotation, AlignedRotation)
+	else
+		Emitter2D.Rotation = Emitter3D.Rotation
 	end
 end
 
