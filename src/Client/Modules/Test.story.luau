@@ -20,7 +20,7 @@ local Modules = script.Parent
 local Packages = Modules.Packages
 local Seam = require(Packages.Seam)
 local SeamStoryUtils = require(Packages.SeamStoryUtils)
-local UILabs = require(Packages["ui-labs"])
+local UILabs = require(Packages.UILabs)
 
 Story.controls = {
 	FieldOfView = UILabs.Slider(70, 1, 120),
@@ -156,7 +156,7 @@ function Story.render(props)
 		BackgroundColor3 = Color3.fromRGB(20, 20, 24),
 		BorderSizePixel = 0,
 		CurrentCamera = Camera,
-        
+
 		Size = Scope:Computed(function(use)
 			local Scale = use(Controls.ViewportScale)
 			return UDim2.fromScale(Scale, Scale)
