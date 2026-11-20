@@ -18,6 +18,7 @@ export type MimicBinding = {
 	Layer : "Front" | "Behind",
 	Attachment : Attachment?,
 	HostFrame : Frame?,
+	WasEnabled : boolean,
 }
 
 local function ScaleNumberSequence(Sequence : NumberSequence, Scale : number) : NumberSequence
@@ -146,6 +147,7 @@ local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : Pa
 		Layer = Layer,
 		Attachment = Attachment,
 		HostFrame = HostFrame,
+		WasEnabled = Emitter3D.Enabled,
 	})
 end
 
@@ -185,8 +187,18 @@ function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, Fr
 	return Bindings
 end
 
-function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera : Camera, PixelSize : Vector2, DepthByPart : {[BasePart] : number}, BoundsByPart : {[BasePart] : Rect})
+function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, Camera : Camera, PixelSize : Vector2, DepthByPart : {[BasePart] : number}, BoundsByPart : {[BasePart] : Rect}, ShowParticles : boolean)
 	for _, Binding in Bindings do
+		local ShouldEnable = ShowParticles and Binding.WasEnabled
+
+		Scope:New(Binding.Emitter2D, {
+			Enabled = ShouldEnable,
+		})
+
+		if not ShouldEnable then
+			Binding.Emitter2D:Clear()
+		end
+
 		local Depth = DepthByPart[Binding.Part]
 		local Bounds = BoundsByPart[Binding.Part]
 		if not Depth or not Bounds then

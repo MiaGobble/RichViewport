@@ -35,6 +35,7 @@ Story.controls = {
 	RotationY = UILabs.Slider(0, -180, 180),
 	RotationZ = UILabs.Slider(0, -180, 180),
 	ShowBounds = true,
+	ShowParticles = true,
 }
 
 local function CollectParts(Root : Instance) : {BasePart}
@@ -109,7 +110,7 @@ local function UpdateLayerFrame(Scope : any, Frame : Frame, Stroke : UIStroke?, 
 	end
 end
 
-local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : ViewportParticles.PartFrames}, MimicBindings : {ViewportParticles.MimicBinding}, ShowBounds : boolean)
+local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : ViewportParticles.PartFrames}, MimicBindings : {ViewportParticles.MimicBinding}, ShowBounds : boolean, ShowParticles : boolean)
 	local PixelSize = Viewport.AbsoluteSize
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return
@@ -154,7 +155,7 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 		Scope:New(Entry.Front, {ZIndex = Index})
 	end
 
-	ViewportParticles.UpdateMimics(Scope, MimicBindings, Camera, PixelSize, DepthByPart, BoundsByPart)
+	ViewportParticles.UpdateMimics(Scope, MimicBindings, Camera, PixelSize, DepthByPart, BoundsByPart, ShowParticles)
 end
 
 function Story.render(props)
@@ -277,7 +278,16 @@ function Story.render(props)
 		Camera.FieldOfView = Controls.FieldOfView.Value
 		Camera.CFrame = CFrame.lookAt(Focus + Vector3.new(0, 0, Controls.CameraDistance.Value), Focus)
 
-		UpdatePartBoundsFrames(Scope, Viewport, Camera, Parts, FramesByPart, MimicBindings, Controls.ShowBounds.Value)
+		UpdatePartBoundsFrames(
+			Scope,
+			Viewport,
+			Camera,
+			Parts,
+			FramesByPart,
+			MimicBindings,
+			Controls.ShowBounds.Value,
+			Controls.ShowParticles.Value
+		)
 	end
 
 	Scope:OnChanged(Viewport, function(Property)
