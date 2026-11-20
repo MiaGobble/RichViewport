@@ -45,6 +45,26 @@ local function CollectParts(Root : Instance) : {BasePart}
 	return Parts
 end
 
+-- ViewportFrame cameras keep ViewportSize at (1, 1), so WorldToViewportPoint
+-- projects with a wrong aspect ratio. Project manually against AbsoluteSize instead.
+local function WorldToViewportPixels(Camera : Camera, WorldPoint : Vector3, PixelSize : Vector2) : (number?, number?, number?)
+	local Relative = Camera.CFrame:PointToObjectSpace(WorldPoint)
+	local Depth = -Relative.Z
+
+	if Depth <= 0 then
+		return nil
+	end
+
+	local AspectRatio = PixelSize.X / PixelSize.Y
+	local HalfHeight = math.tan(math.rad(Camera.FieldOfView) * 0.5) * Depth
+	local HalfWidth = HalfHeight * AspectRatio
+
+	local ScreenX = (Relative.X / HalfWidth * 0.5 + 0.5) * PixelSize.X
+	local ScreenY = (-Relative.Y / HalfHeight * 0.5 + 0.5) * PixelSize.Y
+
+	return ScreenX, ScreenY, Depth
+end
+
 local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize : Vector2) : (number?, number?, number?, number?, number?)
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return nil
@@ -62,22 +82,17 @@ local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize :
 
 	for _, Offset in CORNER_OFFSETS do
 		local WorldPoint = PartCFrame:PointToWorldSpace(Offset * HalfSize)
-		local ScreenPoint = Camera:WorldToViewportPoint(WorldPoint)
+		local PixelX, PixelY, Depth = WorldToViewportPixels(Camera, WorldPoint, PixelSize)
 
-		if ScreenPoint.Z <= 0 then
+		if not PixelX then
 			continue
 		end
-
-		-- WorldToViewportPoint uses Camera.ViewportSize; remap into the overlay's pixel space.
-		local ViewportSize = Camera.ViewportSize
-		local PixelX = if ViewportSize.X > 0 then ScreenPoint.X / ViewportSize.X * PixelSize.X else ScreenPoint.X
-		local PixelY = if ViewportSize.Y > 0 then ScreenPoint.Y / ViewportSize.Y * PixelSize.Y else ScreenPoint.Y
 
 		MinX = math.min(MinX, PixelX)
 		MinY = math.min(MinY, PixelY)
 		MaxX = math.max(MaxX, PixelX)
 		MaxY = math.max(MaxY, PixelY)
-		DepthSum += ScreenPoint.Z
+		DepthSum += Depth :: number
 		SampleCount += 1
 	end
 
