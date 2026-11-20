@@ -24,6 +24,7 @@ Story.controls = {
 	RotationZ = UILabs.Slider(0, -180, 180),
 	ShowBounds = false,
 	ShowParticles = true,
+	BasePartLayering = false,
 }
 
 function Story.render(props)
@@ -57,6 +58,8 @@ function Story.render(props)
 	local View = RichViewport.new(SourceAsset, Camera, Host)
 	Scope:AddObject(View)
 
+	local BasePartLayeringEnabled = false
+
 	local function ApplyControls()
 		local Object = View.Object
 
@@ -80,6 +83,14 @@ function Story.render(props)
 			View:ShowParticles()
 		else
 			View:HideParticles()
+		end
+
+		if Controls.BasePartLayering.Value and not BasePartLayeringEnabled then
+			View:EnableBasePartLayering()
+			BasePartLayeringEnabled = true
+		elseif not Controls.BasePartLayering.Value and BasePartLayeringEnabled then
+			View:DisableBasePartLayering()
+			BasePartLayeringEnabled = false
 		end
 	end
 

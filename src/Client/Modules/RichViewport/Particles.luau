@@ -163,7 +163,20 @@ local function CreateAttachmentHost(Scope : any, Parent : Frame, Name : string) 
 	})
 end
 
-local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : ParticleEmitter, Part : BasePart, BoundsFrame : Frame, Layer : "Front" | "Behind", PixelsPerStud : number, RateScale : number, Attachment : Attachment?, EmissionMode : Enum.ParticleEmitter2DEmissionMode)
+local WAS_ENABLED_ATTRIBUTE = "RichViewportWasEnabled"
+
+local function CaptureWasEnabled(Emitter3D : ParticleEmitter) : boolean
+	local Stored = Emitter3D:GetAttribute(WAS_ENABLED_ATTRIBUTE)
+	if typeof(Stored) == "boolean" then
+		return Stored
+	end
+
+	local WasEnabled = Emitter3D.Enabled
+	Emitter3D:SetAttribute(WAS_ENABLED_ATTRIBUTE, WasEnabled)
+	return WasEnabled
+end
+
+local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : ParticleEmitter, Part : BasePart, BoundsFrame : Frame, Layer : "Front" | "Behind", PixelsPerStud : number, RateScale : number, Attachment : Attachment?, EmissionMode : Enum.ParticleEmitter2DEmissionMode, WasEnabled : boolean)
 	local HostFrame = nil
 	local Parent = BoundsFrame
 
@@ -181,7 +194,7 @@ local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : Pa
 		Layer = Layer,
 		Attachment = Attachment,
 		HostFrame = HostFrame,
-		WasEnabled = Emitter3D.Enabled,
+		WasEnabled = WasEnabled,
 		LockedToPart = Emitter3D.LockedToPart,
 	})
 end
@@ -223,6 +236,8 @@ function Particles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPa
 
 		local ZOffset = Emitter3D.ZOffset
 		local IsVolume = Emitter3D.ShapeStyle == Enum.ParticleEmitterShapeStyle.Volume
+		-- Persist across rebuilds: we disable the 3D emitter after the first attach.
+		local WasEnabled = CaptureWasEnabled(Emitter3D)
 
 		if Attachment then
 			local LayerFrame = if ZOffset < 0 then Frames.Behind else Frames.Front
@@ -237,7 +252,8 @@ function Particles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPa
 				PixelsPerStud,
 				1,
 				Attachment,
-				Enum.ParticleEmitter2DEmissionMode.Point
+				Enum.ParticleEmitter2DEmissionMode.Point,
+				WasEnabled
 			)
 		elseif IsVolume then
 			local BehindWeight, FrontWeight = GetVolumeLayerWeights(ZOffset)
@@ -252,7 +268,8 @@ function Particles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPa
 				PixelsPerStud,
 				BehindWeight,
 				nil,
-				Enum.ParticleEmitter2DEmissionMode.BoundingBox
+				Enum.ParticleEmitter2DEmissionMode.BoundingBox,
+				WasEnabled
 			)
 			AddBinding(
 				Bindings,
@@ -264,7 +281,8 @@ function Particles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPa
 				PixelsPerStud,
 				FrontWeight,
 				nil,
-				Enum.ParticleEmitter2DEmissionMode.BoundingBox
+				Enum.ParticleEmitter2DEmissionMode.BoundingBox,
+				WasEnabled
 			)
 		else
 			local LayerFrame = if ZOffset < 0 then Frames.Behind else Frames.Front
@@ -279,7 +297,8 @@ function Particles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPa
 				PixelsPerStud,
 				1,
 				nil,
-				Enum.ParticleEmitter2DEmissionMode.BoundingBox
+				Enum.ParticleEmitter2DEmissionMode.BoundingBox,
+				WasEnabled
 			)
 		end
 

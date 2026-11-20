@@ -37,11 +37,14 @@ type Fields = {
 	_Root : Frame,
 	_BehindOverlay : Frame,
 	_FrontOverlay : Frame,
+	_LayerStack : Frame,
+	_SourceHolder : Folder,
 	_ContentScope : any?,
 	_FramesByPart : {[BasePart] : Overlays.PartFrames},
 	_MimicBindings : {Particles.MimicBinding},
 	_DebugVisible : boolean,
 	_ParticlesVisible : boolean,
+	_BasePartLayeringCount : number,
 	_Destroyed : boolean,
 	_DestroyedEvent : BindableEvent,
 	_RefreshedEvent : BindableEvent,
@@ -49,6 +52,7 @@ type Fields = {
 	_CameraWatchScope : any?,
 	_Assigning : boolean,
 	_StructureDirty : boolean,
+	_SuppressStructureWatch : boolean,
 	_LayerRotationByPart : {[BasePart] : number},
 }
 
@@ -96,11 +100,14 @@ function RichViewport.new(Object : Instance, Camera : Camera, Parent : GuiObject
 		_Root = Stack.Root,
 		_BehindOverlay = Stack.Behind,
 		_FrontOverlay = Stack.Front,
+		_LayerStack = Stack.LayerStack,
+		_SourceHolder = Stack.SourceHolder,
 		_ContentScope = nil,
 		_FramesByPart = {},
 		_MimicBindings = {},
 		_DebugVisible = false,
 		_ParticlesVisible = true,
+		_BasePartLayeringCount = 0,
 		_Destroyed = false,
 		_DestroyedEvent = DestroyedEvent,
 		_RefreshedEvent = RefreshedEvent,
@@ -108,6 +115,7 @@ function RichViewport.new(Object : Instance, Camera : Camera, Parent : GuiObject
 		_CameraWatchScope = nil,
 		_Assigning = false,
 		_StructureDirty = false,
+		_SuppressStructureWatch = false,
 		_LayerRotationByPart = {},
 	}
 
@@ -152,7 +160,9 @@ function RichViewport.Refresh(self : RichViewport)
 	local DepthByPart : {[BasePart] : number} = {}
 	local BoundsByPart : {[BasePart] : Spatial.LayerBounds} = {}
 	local Ranked = {}
+	local LayeredRanked = {}
 	local NextRotations : {[BasePart] : number} = {}
+	local Layered = RichViewport.IsBasePartLayeringEnabled(self)
 
 	for Part, Frames in self._FramesByPart do
 		if not Part.Parent then
@@ -176,6 +186,11 @@ function RichViewport.Refresh(self : RichViewport)
 		DepthByPart[Part] = LayerBounds.Depth
 		BoundsByPart[Part] = LayerBounds
 
+		if Frames.Visual and Frames.Viewport then
+			Overlays.SyncPartVisual(Frames.Visual, Part)
+			Frames.Viewport.CurrentCamera = self.Camera
+		end
+
 		Overlays.UpdatePartFrames(self.Scope, Frames, LayerBounds, self._DebugVisible)
 
 		table.insert(Ranked, {
@@ -183,10 +198,24 @@ function RichViewport.Refresh(self : RichViewport)
 			Behind = Frames.Behind,
 			Depth = LayerBounds.Depth,
 		})
+
+		if Frames.Viewport then
+			table.insert(LayeredRanked, {
+				Front = Frames.Front,
+				Behind = Frames.Behind,
+				Viewport = Frames.Viewport,
+				Depth = LayerBounds.Depth,
+			})
+		end
 	end
 
 	self._LayerRotationByPart = NextRotations
-	Overlays.ApplyDepthRanking(self.Scope, Ranked)
+
+	if Layered then
+		Overlays.ApplyLayeredDepthRanking(self.Scope, LayeredRanked)
+	else
+		Overlays.ApplyDepthRanking(self.Scope, Ranked)
+	end
 
 	Particles.UpdateMimics(
 		self.Scope,
@@ -243,6 +272,55 @@ function RichViewport.HideParticles(self : RichViewport)
 	RichViewport._AssertNotDestroyed(self)
 	self._ParticlesVisible = false
 	self:Refresh()
+end
+
+--[=[
+	Increments the base-part layering counter. While the count is above zero, each
+	part renders in its own ViewportFrame interleaved with particle hosts for
+	correct mesh occlusion.
+
+	@within RichViewport
+]=]
+function RichViewport.EnableBasePartLayering(self : RichViewport)
+	RichViewport._AssertNotDestroyed(self)
+
+	local WasEnabled = RichViewport.IsBasePartLayeringEnabled(self)
+	self._BasePartLayeringCount += 1
+
+	if not WasEnabled then
+		RichViewport._RebuildContent(self)
+		self:Refresh()
+	end
+end
+
+--[=[
+	Decrements the base-part layering counter. When the count returns to zero,
+	shared single-viewport mode is restored.
+
+	@within RichViewport
+]=]
+function RichViewport.DisableBasePartLayering(self : RichViewport)
+	RichViewport._AssertNotDestroyed(self)
+
+	if self._BasePartLayeringCount <= 0 then
+		return
+	end
+
+	self._BasePartLayeringCount -= 1
+
+	if not RichViewport.IsBasePartLayeringEnabled(self) then
+		RichViewport._RebuildContent(self)
+		self:Refresh()
+	end
+end
+
+--[=[
+	Whether base-part layering is currently active (refcount above zero).
+
+	@within RichViewport
+]=]
+function RichViewport.IsBasePartLayeringEnabled(self : RichViewport) : boolean
+	return self._BasePartLayeringCount > 0
 end
 
 --[=[
@@ -330,8 +408,14 @@ function RichViewport._WatchTransforms(self : RichViewport, WatchScope : any, In
 	end
 end
 
+local function ShouldWatchStructure(InstanceObject : Instance) : boolean
+	return InstanceObject:IsA("BasePart")
+		or InstanceObject:IsA("Attachment")
+		or InstanceObject:IsA("ParticleEmitter")
+end
+
 function RichViewport._ScheduleStructureRebuild(self : RichViewport)
-	if self._StructureDirty or self._Destroyed then
+	if self._SuppressStructureWatch or self._StructureDirty or self._Destroyed then
 		return
 	end
 
@@ -340,7 +424,7 @@ function RichViewport._ScheduleStructureRebuild(self : RichViewport)
 	task.defer(function()
 		self._StructureDirty = false
 
-		if self._Destroyed then
+		if self._Destroyed or self._SuppressStructureWatch then
 			return
 		end
 
@@ -360,12 +444,25 @@ function RichViewport._BindObjectWatchers(self : RichViewport)
 	self._ObjectWatchScope = WatchScope
 
 	WatchScope:AddObject(self.Object.DescendantAdded:Connect(function(Descendant)
+		if self._SuppressStructureWatch then
+			return
+		end
+
 		RichViewport._WatchTransforms(self, WatchScope, Descendant)
-		RichViewport._ScheduleStructureRebuild(self)
+
+		if ShouldWatchStructure(Descendant) then
+			RichViewport._ScheduleStructureRebuild(self)
+		end
 	end))
 
-	WatchScope:AddObject(self.Object.DescendantRemoving:Connect(function()
-		RichViewport._ScheduleStructureRebuild(self)
+	WatchScope:AddObject(self.Object.DescendantRemoving:Connect(function(Descendant)
+		if self._SuppressStructureWatch then
+			return
+		end
+
+		if ShouldWatchStructure(Descendant) then
+			RichViewport._ScheduleStructureRebuild(self)
+		end
 	end))
 
 	if self.Object:IsA("BasePart") or self.Object:IsA("Attachment") then
@@ -377,8 +474,18 @@ function RichViewport._BindObjectWatchers(self : RichViewport)
 	end
 end
 
+function RichViewport._GetObjectParent(self : RichViewport) : Instance
+	if RichViewport.IsBasePartLayeringEnabled(self) then
+		return self._SourceHolder
+	end
+
+	return self.ViewportFrame
+end
+
 function RichViewport._RebuildContent(self : RichViewport)
 	RichViewport._AssertNotDestroyed(self)
+
+	self._SuppressStructureWatch = true
 
 	if self._ContentScope then
 		self._ContentScope:Destroy()
@@ -391,15 +498,36 @@ function RichViewport._RebuildContent(self : RichViewport)
 	self._MimicBindings = {}
 	self._LayerRotationByPart = {}
 
+	local Layered = RichViewport.IsBasePartLayeringEnabled(self)
+
+	self._LayerStack.Visible = Layered
+	self._BehindOverlay.Visible = not Layered
+	self.ViewportFrame.Visible = not Layered
+	self._FrontOverlay.Visible = not Layered
+
+	local Object = rawget(self, "Object")
+	if Object then
+		Object.Parent = RichViewport._GetObjectParent(self)
+	end
+
 	local Parts = Spatial.CollectParts(self.Object)
 
 	for _, Part in Parts do
-		self._FramesByPart[Part] = Overlays.CreatePartFrames(
-			ContentScope,
-			Part,
-			self._BehindOverlay,
-			self._FrontOverlay
-		)
+		if Layered then
+			self._FramesByPart[Part] = Overlays.CreatePartLayerSlice(
+				ContentScope,
+				Part,
+				self._LayerStack,
+				self.Camera
+			)
+		else
+			self._FramesByPart[Part] = Overlays.CreatePartFrames(
+				ContentScope,
+				Part,
+				self._BehindOverlay,
+				self._FrontOverlay
+			)
+		end
 	end
 
 	self._MimicBindings = Particles.AttachToBoundsFrames(
@@ -408,21 +536,27 @@ function RichViewport._RebuildContent(self : RichViewport)
 		self._FramesByPart,
 		40
 	)
+
+	self._SuppressStructureWatch = false
 end
 
 function RichViewport._SetObject(self : RichViewport, Source : Instance)
 	RichViewport._AssertNotDestroyed(self)
 	assert(typeof(Source) == "Instance", "Object must be an Instance")
 
+	self._SuppressStructureWatch = true
+
 	local Previous = rawget(self, "Object")
 	local Clone = Source:Clone()
-	Clone.Parent = self.ViewportFrame
+	Clone.Parent = RichViewport._GetObjectParent(self)
 
 	rawset(self, "Object", Clone)
 
-	if Previous and Previous.Parent == self.ViewportFrame then
+	if Previous then
 		Previous:Destroy()
 	end
+
+	self._SuppressStructureWatch = false
 
 	RichViewport._BindObjectWatchers(self)
 	RichViewport._RebuildContent(self)
@@ -434,6 +568,13 @@ function RichViewport._SetCamera(self : RichViewport, Camera : Camera)
 
 	rawset(self, "Camera", Camera)
 	self.ViewportFrame.CurrentCamera = Camera
+
+	for _, Frames in self._FramesByPart do
+		if Frames.Viewport then
+			Frames.Viewport.CurrentCamera = Camera
+		end
+	end
+
 	RichViewport._BindCameraWatchers(self)
 end
 
