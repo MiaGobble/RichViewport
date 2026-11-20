@@ -21,6 +21,8 @@ export type MimicBinding = {
 	WasEnabled : boolean,
 }
 
+local PERSPECTIVE_SQUASH_STRENGTH = 1.25
+
 local function ScaleNumberSequence(Sequence : NumberSequence, Scale : number) : NumberSequence
 	local Keypoints = table.create(#Sequence.Keypoints)
 
@@ -35,8 +37,35 @@ local function ScaleNumberSequence(Sequence : NumberSequence, Scale : number) : 
 	return NumberSequence.new(Keypoints)
 end
 
+local function OffsetNumberSequence(Sequence : NumberSequence, Offset : number) : NumberSequence
+	local Keypoints = table.create(#Sequence.Keypoints)
+
+	for Index, Keypoint in Sequence.Keypoints do
+		Keypoints[Index] = NumberSequenceKeypoint.new(
+			Keypoint.Time,
+			Keypoint.Value + Offset,
+			Keypoint.Envelope
+		)
+	end
+
+	return NumberSequence.new(Keypoints)
+end
+
 local function ScaleNumberRange(Range : NumberRange, Scale : number) : NumberRange
 	return NumberRange.new(Range.Min * Scale, Range.Max * Scale)
+end
+
+local function GetEmitterCFrame(Part : BasePart, Attachment : Attachment?) : CFrame
+	if Attachment then
+		return Attachment.WorldCFrame
+	end
+
+	return Part.CFrame
+end
+
+local function GetEmissionWorldDirection(Emitter3D : ParticleEmitter, Part : BasePart, Attachment : Attachment?) : Vector3
+	local LocalDirection = Vector3.FromNormalId(Emitter3D.EmissionDirection)
+	return GetEmitterCFrame(Part, Attachment):VectorToWorldSpace(LocalDirection)
 end
 
 function ViewportParticles.WorldToViewportPixels(Camera : Camera, WorldPoint : Vector3, PixelSize : Vector2) : (number?, number?, number?)
@@ -66,14 +95,33 @@ function ViewportParticles.GetPixelsPerStud(Camera : Camera, Depth : number, Pix
 	return PixelSize.Y / (2 * HalfHeight)
 end
 
-function ViewportParticles.ApplyScale(Emitter2D : ParticleEmitter2D, Emitter3D : ParticleEmitter, PixelsPerStud : number)
-	local Acceleration = Emitter3D.Acceleration
+function ViewportParticles.ApplyMotionAndPerspective(Emitter2D : ParticleEmitter2D, Emitter3D : ParticleEmitter, Camera : Camera, PixelsPerStud : number, Part : BasePart, Attachment : Attachment?)
+	local CameraCFrame = Camera.CFrame
+	local EmissionDirection = GetEmissionWorldDirection(Emitter3D, Part, Attachment)
+	local ViewDot = math.abs(EmissionDirection:Dot(CameraCFrame.LookVector))
+	local Foreshortening = math.clamp(1 - ViewDot, 0, 1)
 
+	-- Depth scale for stud → pixel motion/size.
 	Emitter2D.Size = ScaleNumberSequence(Emitter3D.Size, PixelsPerStud)
 	Emitter2D.Speed = ScaleNumberRange(Emitter3D.Speed, PixelsPerStud)
 
-	-- Screen Y grows downward; Roblox world Y grows upward.
-	Emitter2D.Acceleration = Vector2.new(Acceleration.X, -Acceleration.Y) * PixelsPerStud
+	-- Acceleration into camera space (screen Y is down).
+	local AccelerationCamera = CameraCFrame:VectorToObjectSpace(Emitter3D.Acceleration)
+	Emitter2D.Acceleration = Vector2.new(AccelerationCamera.X, -AccelerationCamera.Y) * PixelsPerStud
+
+	-- Authored squash plus extra flatten when the emission axis is edge-on to the camera.
+	Emitter2D.Squash = OffsetNumberSequence(
+		Emitter3D.Squash,
+		Foreshortening * PERSPECTIVE_SQUASH_STRENGTH
+	)
+
+	-- Aim 2D emission along the projected 3D emission axis.
+	local EmissionCamera = CameraCFrame:VectorToObjectSpace(EmissionDirection)
+	local ScreenEmission = Vector2.new(EmissionCamera.X, -EmissionCamera.Y)
+
+	if ScreenEmission.Magnitude > 1e-4 then
+		Emitter2D.EmissionAngle = math.deg(math.atan2(ScreenEmission.Y, ScreenEmission.X))
+	end
 end
 
 function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter, Parent : GuiObject, PixelsPerStud : number, RateScale : number?, EmissionMode : Enum.ParticleEmitter2DEmissionMode?) : ParticleEmitter2D
@@ -107,7 +155,10 @@ function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter,
 		FlipbookSizeY = Emitter3D.FlipbookSizeY,
 	})
 
-	ViewportParticles.ApplyScale(Emitter2D, Emitter3D, PixelsPerStud)
+	-- Camera is not available at create time for full perspective; depth scale only.
+	Emitter2D.Size = ScaleNumberSequence(Emitter3D.Size, PixelsPerStud)
+	Emitter2D.Speed = ScaleNumberRange(Emitter3D.Speed, PixelsPerStud)
+	Emitter2D.Acceleration = Vector2.new(Emitter3D.Acceleration.X, -Emitter3D.Acceleration.Y) * PixelsPerStud
 
 	return Emitter2D
 end
@@ -206,32 +257,37 @@ function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, 
 		end
 
 		local PixelsPerStud = ViewportParticles.GetPixelsPerStud(Camera, Depth, PixelSize)
-		ViewportParticles.ApplyScale(Binding.Emitter2D, Binding.Emitter3D, PixelsPerStud)
 
-		if not Binding.Attachment or not Binding.HostFrame then
-			continue
+		if Binding.Attachment and Binding.HostFrame then
+			local ScreenX, ScreenY, AttachmentDepth = ViewportParticles.WorldToViewportPixels(
+				Camera,
+				Binding.Attachment.WorldPosition,
+				PixelSize
+			)
+
+			if not ScreenX then
+				Scope:New(Binding.HostFrame, {Visible = false})
+				continue
+			end
+
+			if AttachmentDepth then
+				PixelsPerStud = ViewportParticles.GetPixelsPerStud(Camera, AttachmentDepth, PixelSize)
+			end
+
+			Scope:New(Binding.HostFrame, {
+				Visible = true,
+				Position = UDim2.fromOffset(ScreenX - Bounds.Min.X, ScreenY - Bounds.Min.Y),
+			})
 		end
 
-		local ScreenX, ScreenY, AttachmentDepth = ViewportParticles.WorldToViewportPixels(
+		ViewportParticles.ApplyMotionAndPerspective(
+			Binding.Emitter2D,
+			Binding.Emitter3D,
 			Camera,
-			Binding.Attachment.WorldPosition,
-			PixelSize
+			PixelsPerStud,
+			Binding.Part,
+			Binding.Attachment
 		)
-
-		if not ScreenX then
-			Scope:New(Binding.HostFrame, {Visible = false})
-			continue
-		end
-
-		if AttachmentDepth then
-			PixelsPerStud = ViewportParticles.GetPixelsPerStud(Camera, AttachmentDepth, PixelSize)
-			ViewportParticles.ApplyScale(Binding.Emitter2D, Binding.Emitter3D, PixelsPerStud)
-		end
-
-		Scope:New(Binding.HostFrame, {
-			Visible = true,
-			Position = UDim2.fromOffset(ScreenX - Bounds.Min.X, ScreenY - Bounds.Min.Y),
-		})
 	end
 end
 
