@@ -19,6 +19,7 @@ export type MimicBinding = {
 	Attachment : Attachment?,
 	HostFrame : Frame?,
 	WasEnabled : boolean,
+	LockedToPart : boolean,
 }
 
 -- ParticleEmitter Size/Speed are studs; ParticleEmitter2D are pixels.
@@ -187,6 +188,7 @@ local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : Pa
 		Attachment = Attachment,
 		HostFrame = HostFrame,
 		WasEnabled = Emitter3D.Enabled,
+		LockedToPart = Emitter3D.LockedToPart,
 	})
 end
 
@@ -209,8 +211,16 @@ function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, Fr
 			else nil
 
 		local ZOffset = Emitter3D.ZOffset
+		local LockedToPart = Emitter3D.LockedToPart
 
-		if ZOffset < 0 then
+		if LockedToPart then
+			-- Locked particles must stay on one host; splitting layers detaches the look.
+			if ZOffset < 0 then
+				AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 1, Attachment)
+			else
+				AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 1, Attachment)
+			end
+		elseif ZOffset < 0 then
 			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 1, Attachment)
 		elseif ZOffset > 0 then
 			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 1, Attachment)
@@ -232,6 +242,7 @@ function ViewportParticles.UpdateMimics(Scope : any, Bindings : {MimicBinding}, 
 
 		Scope:New(Binding.Emitter2D, {
 			Enabled = ShouldEnable,
+			LockedToParent = Binding.LockedToPart,
 		})
 
 		if not ShouldEnable then
