@@ -14,6 +14,7 @@ local CORNER_OFFSETS = {
 
 local BOUNDS_BACKGROUND_TRANSPARENCY = 0.85
 local BOUNDS_STROKE_TRANSPARENCY = 0
+local VIEWPORT_BACKGROUND_COLOR = Color3.fromRGB(20, 20, 24)
 
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -108,7 +109,27 @@ local function GetPartScreenBounds(Camera : Camera, Part : BasePart, PixelSize :
 	return MinX, MinY, MaxX - MinX, MaxY - MinY, DepthSum / SampleCount
 end
 
-local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : Frame}, MimicBindings : {ViewportParticles.MimicBinding}, ShowBounds : boolean)
+local function UpdateLayerFrame(Scope : any, Frame : Frame, Stroke : UIStroke?, X : number, Y : number, Width : number, Height : number, BackgroundTransparency : number, StrokeTransparency : number, ShowStroke : boolean)
+	Scope:New(Frame, {
+		Visible = true,
+		Position = UDim2.fromOffset(X, Y),
+		Size = UDim2.fromOffset(math.max(Width, 1), math.max(Height, 1)),
+		BackgroundTransparency = BackgroundTransparency,
+		ClipsDescendants = false,
+	})
+
+	if Stroke and ShowStroke then
+		Scope:New(Stroke, {
+			Transparency = StrokeTransparency,
+		})
+	elseif Stroke then
+		Scope:New(Stroke, {
+			Transparency = 1,
+		})
+	end
+end
+
+local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Camera : Camera, Parts : {BasePart}, FramesByPart : {[BasePart] : ViewportParticles.PartFrames}, MimicBindings : {ViewportParticles.MimicBinding}, ShowBounds : boolean)
 	local PixelSize = Viewport.AbsoluteSize
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return
@@ -120,35 +141,24 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 	local Ranked = {}
 
 	for _, Part in Parts do
-		local Frame = FramesByPart[Part]
-		local Stroke = Frame:FindFirstChildWhichIsA("UIStroke")
+		local Frames = FramesByPart[Part]
+		local FrontStroke = Frames.Front:FindFirstChildWhichIsA("UIStroke")
 		local X, Y, Width, Height, Depth = GetPartScreenBounds(Camera, Part, PixelSize)
 
 		if not X then
-			Scope:New(Frame, {
-				Visible = false,
-			})
+			Scope:New(Frames.Front, {Visible = false})
+			Scope:New(Frames.Behind, {Visible = false})
 			continue
 		end
 
 		DepthByPart[Part] = Depth :: number
 
-		Scope:New(Frame, {
-			Visible = true,
-			Position = UDim2.fromOffset(X, Y),
-			Size = UDim2.fromOffset(math.max(Width, 1), math.max(Height, 1)),
-			BackgroundTransparency = BackgroundTransparency,
-			ClipsDescendants = false,
-		})
-
-		if Stroke then
-			Scope:New(Stroke, {
-				Transparency = StrokeTransparency,
-			})
-		end
+		UpdateLayerFrame(Scope, Frames.Front, FrontStroke, X, Y, Width, Height, BackgroundTransparency, StrokeTransparency, true)
+		UpdateLayerFrame(Scope, Frames.Behind, nil, X, Y, Width, Height, 1, 1, false)
 
 		table.insert(Ranked, {
-			Frame = Frame,
+			Front = Frames.Front,
+			Behind = Frames.Behind,
 			Depth = Depth :: number,
 		})
 	end
@@ -158,9 +168,8 @@ local function UpdatePartBoundsFrames(Scope : any, Viewport : ViewportFrame, Cam
 	end)
 
 	for Index, Entry in Ranked do
-		Scope:New(Entry.Frame, {
-			ZIndex = Index,
-		})
+		Scope:New(Entry.Behind, {ZIndex = Index})
+		Scope:New(Entry.Front, {ZIndex = Index})
 	end
 
 	ViewportParticles.UpdateMimicScales(MimicBindings, Camera, PixelSize, DepthByPart)
@@ -176,20 +185,28 @@ function Story.render(props)
 
 	local Asset = SourceAsset:Clone()
 	local Parts = CollectParts(Asset)
-	local FramesByPart : {[BasePart] : Frame} = {}
+	local FramesByPart : {[BasePart] : ViewportParticles.PartFrames} = {}
 
 	local Camera = Scope:New("Camera", {
 		Name = "ViewportCamera",
 		FieldOfView = Controls.FieldOfView.Value,
 	})
 
+	local BehindOverlay = Scope:New("Frame", {
+		Name = "BehindOverlay",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ZIndex = 1,
+	})
+
 	local Viewport = Scope:New("ViewportFrame", {
 		Name = "AssetViewport",
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.fromRGB(20, 20, 24),
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CurrentCamera = Camera,
-		ZIndex = 1,
+		ZIndex = 2,
 
 		[Seam.Children] = {
 			Camera,
@@ -197,18 +214,27 @@ function Story.render(props)
 		},
 	})
 
-	local Overlay = Scope:New("Frame", {
-		Name = "BoundsOverlay",
+	local FrontOverlay = Scope:New("Frame", {
+		Name = "FrontOverlay",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		ZIndex = 2,
+		ZIndex = 3,
 	})
 
 	for _, Part in Parts do
-		FramesByPart[Part] = Scope:New("Frame", {
-			Name = `{Part.Name}_Bounds`,
-			Parent = Overlay,
+		local Behind = Scope:New("Frame", {
+			Name = `{Part.Name}_Behind`,
+			Parent = BehindOverlay,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ClipsDescendants = false,
+			Visible = false,
+		})
+
+		local Front = Scope:New("Frame", {
+			Name = `{Part.Name}_Front`,
+			Parent = FrontOverlay,
 			BackgroundColor3 = Color3.fromRGB(0, 255, 140),
 			BackgroundTransparency = 0.85,
 			BorderSizePixel = 0,
@@ -222,6 +248,11 @@ function Story.render(props)
 				}),
 			},
 		})
+
+		FramesByPart[Part] = {
+			Front = Front,
+			Behind = Behind,
+		}
 	end
 
 	local MimicBindings = ViewportParticles.AttachToBoundsFrames(Scope, Asset, FramesByPart, 40)
@@ -231,7 +262,8 @@ function Story.render(props)
 		Parent = props.target,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		BackgroundTransparency = 1,
+		BackgroundColor3 = VIEWPORT_BACKGROUND_COLOR,
+		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 
 		Size = Scope:Computed(function(use)
@@ -240,8 +272,9 @@ function Story.render(props)
 		end),
 
 		[Seam.Children] = {
+			BehindOverlay,
 			Viewport,
-			Overlay,
+			FrontOverlay,
 		},
 	})
 

@@ -6,10 +6,16 @@
 
 local ViewportParticles = {}
 
+export type PartFrames = {
+	Front : Frame,
+	Behind : Frame,
+}
+
 export type MimicBinding = {
 	Emitter3D : ParticleEmitter,
 	Emitter2D : ParticleEmitter2D,
 	Part : BasePart,
+	Layer : "Front" | "Behind",
 }
 
 local function ScaleNumberSequence(Sequence : NumberSequence, Scale : number) : NumberSequence
@@ -49,7 +55,9 @@ function ViewportParticles.ApplyScale(Emitter2D : ParticleEmitter2D, Emitter3D :
 	Emitter2D.Acceleration = Vector2.new(Acceleration.X, -Acceleration.Y) * PixelsPerStud
 end
 
-function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter, Parent : GuiObject, PixelsPerStud : number) : ParticleEmitter2D
+function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter, Parent : GuiObject, PixelsPerStud : number, RateScale : number?) : ParticleEmitter2D
+	local ResolvedRateScale = RateScale or 1
+
 	local Emitter2D = Scope:New("ParticleEmitter2D", {
 		Name = Emitter3D.Name,
 		Parent = Parent,
@@ -58,7 +66,7 @@ function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter,
 		Color = Emitter3D.Color,
 		Transparency = Emitter3D.Transparency,
 		Lifetime = Emitter3D.Lifetime,
-		Rate = Emitter3D.Rate,
+		Rate = Emitter3D.Rate * ResolvedRateScale,
 		Drag = Emitter3D.Drag,
 		Brightness = Emitter3D.Brightness,
 		TimeScale = Emitter3D.TimeScale,
@@ -79,12 +87,22 @@ function ViewportParticles.CreateMimic(Scope : any, Emitter3D : ParticleEmitter,
 	})
 
 	ViewportParticles.ApplyScale(Emitter2D, Emitter3D, PixelsPerStud)
-	Emitter3D.Enabled = false
 
 	return Emitter2D
 end
 
-function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPart : {[BasePart] : Frame}, PixelsPerStud : number) : {MimicBinding}
+local function AddBinding(Bindings : {MimicBinding}, Scope : any, Emitter3D : ParticleEmitter, Part : BasePart, Frame : Frame, Layer : "Front" | "Behind", PixelsPerStud : number, RateScale : number)
+	local Emitter2D = ViewportParticles.CreateMimic(Scope, Emitter3D, Frame, PixelsPerStud, RateScale)
+
+	table.insert(Bindings, {
+		Emitter3D = Emitter3D,
+		Emitter2D = Emitter2D,
+		Part = Part,
+		Layer = Layer,
+	})
+end
+
+function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, FramesByPart : {[BasePart] : PartFrames}, PixelsPerStud : number) : {MimicBinding}
 	local Bindings = {}
 
 	for _, Emitter3D in Root:QueryDescendants("ParticleEmitter") do
@@ -93,18 +111,24 @@ function ViewportParticles.AttachToBoundsFrames(Scope : any, Root : Instance, Fr
 			continue
 		end
 
-		local Frame = FramesByPart[Part]
-		if not Frame then
+		local Frames = FramesByPart[Part]
+		if not Frames then
 			continue
 		end
 
-		local Emitter2D = ViewportParticles.CreateMimic(Scope, Emitter3D, Frame, PixelsPerStud)
+		local ZOffset = Emitter3D.ZOffset
 
-		table.insert(Bindings, {
-			Emitter3D = Emitter3D,
-			Emitter2D = Emitter2D,
-			Part = Part,
-		})
+		if ZOffset < 0 then
+			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 1)
+		elseif ZOffset > 0 then
+			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 1)
+		else
+			-- No authored offset: approximate volume depth by splitting across both layers.
+			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Behind, "Behind", PixelsPerStud, 0.5)
+			AddBinding(Bindings, Scope, Emitter3D, Part, Frames.Front, "Front", PixelsPerStud, 0.5)
+		end
+
+		Emitter3D.Enabled = false
 	end
 
 	return Bindings
