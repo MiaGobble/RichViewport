@@ -1,0 +1,21 @@
+{
+  "name": "ViewportParticles",
+
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedFirst": {
+      "Modules": {
+        "$path": "src/Client/Modules"
+      }
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "src/Client/Scripts"
+        }
+      }
+    }
+  }
+}
