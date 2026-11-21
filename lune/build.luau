@@ -1,5 +1,3 @@
---!strict
-
 --[[
     This script builds the Roblox project by doing two things:
     1. Creating a temporary build file from the Rojo project
@@ -18,7 +16,7 @@
 ]]
 
 -- Constants
-local IS_R15_ENABLED = true -- If true, build will have players join as R15 avatars
+const IS_R15_ENABLED = true -- If true, build will have players join as R15 avatars
 
 -- Imports
 local fs = require("@lune/fs")
