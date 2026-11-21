@@ -98,45 +98,45 @@ Studio's `Camera:WorldToViewportPoint` is avoided because ViewportFrame cameras 
 
 In camera space, Roblox looks down **−Z**, so depth is:
 
-\[
+$$
 \text{Depth} = -R_z
-\]
+$$
 
 Half of the vertical view height in studs at that depth:
 
-\[
+$$
 H = \tan(\mathrm{FOV}/2) \cdot \text{Depth},\quad
 W = H \cdot \frac{\text{PixelWidth}}{\text{PixelHeight}}
-\]
+$$
 
 Then:
 
-\[
+$$
 x = \Bigl(\tfrac{R_x}{W}\cdot\tfrac12 + \tfrac12\Bigr) W_{\text{px}},\quad
 y = \Bigl(-\tfrac{R_y}{H}\cdot\tfrac12 + \tfrac12\Bigr) H_{\text{px}}
-\]
+$$
 
 (`Y` is flipped so +up in world → up on screen.) That is `Spatial.WorldToViewportPixels`.
 
 **Pixels-per-stud** at a depth (the scale used for Size / Speed) is vertical only:
 
-\[
+$$
 \mathrm{PPS} = \frac{H_{\text{px}}}{2H} = \frac{H_{\text{px}}}{2\tan(\mathrm{FOV}/2)\cdot\text{Depth}}
-\]
+$$
 
 Farther → smaller PPS → smaller / slower 2D particles.
 
 ### Directions → emission angle + foreshortening
 
-A world direction is taken into camera space. The **screen residual** is \((R_x, -R_y)\):
+A world direction is taken into camera space. The **screen residual** is $(R_x, -R_y)$:
 
-- **Angle** = \(\operatorname{atan2}(R_y^{\text{screen}}, R_x)\) (0 = screen right)
-- **ScreenFraction** = \(\lVert(R_x,-R_y)\rVert / \lVert R\rVert\)  
+- **Angle** = $\operatorname{atan2}(R_y^{\text{screen}}, R_x)$ (0 = screen right)
+- **ScreenFraction** = $\lVert(R_x,-R_y)\rVert / \lVert R\rVert$  
   → 1 = fully lateral, 0 = pure depth (into / out of the camera)
 
 `ParticleEmitter2D` uses **0 = parent local up**, so screen atan2 is shifted **+90°**, then **minus the emit host's `GuiObject.Rotation`** so AbsoluteRotation does not double-yaw particles.
 
-If the emit axis is nearly view-aligned (ScreenFraction below ~0.22), the XY residual is noisy, so a ⊥ basis \((U, V)\) is built around that axis and the stronger screen axis is picked (with a small horizontal bias). That keeps face-on discs from flipping 180°.
+If the emit axis is nearly view-aligned (ScreenFraction below ~0.22), the XY residual is noisy, so a ⊥ basis $(U, V)$ is built around that axis and the stronger screen axis is picked (with a small horizontal bias). That keeps face-on discs from flipping 180°.
 
 ### Speed “perspective”
 
@@ -154,11 +154,11 @@ Size always uses full PPS (apparent scale by depth only).
 
 Treat the emission direction as the particle's “palm” normal:
 
-\[
+$$
 \text{Facing} = \lvert \hat n \cdot (-\text{LookVector}) \rvert
-\]
+$$
 
-Then \(\text{EdgeOn} = (1 - \text{Facing})^2\), \(\text{SpinScale} = \text{Facing}^2\):
+Then $\text{EdgeOn} = (1 - \text{Facing})^2$, $\text{SpinScale} = \text{Facing}^2$:
 
 - Face-on → billboard-ish, full spin, little extra squash
 - Edge-on → blend toward a soft squash (~0.35), damp `RotSpeed`, and bias sprite rotation along / across travel (`VelocityParallel`: Rotation ≈ EmissionAngle; `VelocityPerpendicular`: EmissionAngle + 90)
