@@ -92,6 +92,8 @@ function Story.render(props)
 			View:DisableBasePartLayering()
 			BasePartLayeringEnabled = false
 		end
+
+		View:Refresh()
 	end
 
 	for _, Control in Controls do
