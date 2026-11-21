@@ -1,13 +1,22 @@
-name = "miagobble/viewport_particles"
+name = "miagobble/rich_viewport"
 version = "0.1.0"
-description = "Viewport Particles"
+description = "ViewportFrame wrapper with depth-aware particle mimics (requires Studio UI Particles beta)"
 license = "MIT"
-authors = ["MiaGobble"]
+authors = ["Mia Gobble"]
 repository = "https://github.com/MiaGobble/viewport-particles"
-private = true
+private = false
+
+includes = [
+    "pesde.toml",
+    "README.md",
+    "LICENSE",
+    "src/**/*.luau",
+]
 
 [target]
 environment = "roblox"
+lib = "src/init.luau"
+build_files = ["src"]
 
 [indices]
 default = "https://github.com/pesde-pkg/index"
@@ -26,11 +35,11 @@ sourcemap_generator = ".pesde/scripts/sourcemap_generator.luau"
 pesde = "^0.7.0"
 lune = "^0.10.4"
 
+[dependencies]
+Seam = { name = "miagobble/seam", version = "^1.1.0" }
+
 [dev_dependencies]
 scripts = { name = "pesde/scripts_rojo", version = "^0.2.0", target = "lune" }
 rojo = { name = "pesde/rojo", version = "^7.7.0", target = "lune" }
-
-[dependencies]
-Seam = { name = "miagobble/seam", version = "^1.1.0" }
 SeamStoryUtils = { wally = "miagobble/seam-story-utils", version = "^0.1.3" }
 UILabs = { wally = "pepeeltoro41/ui-labs", version = "^2.4.2" }
