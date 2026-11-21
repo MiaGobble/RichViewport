@@ -3,7 +3,7 @@
 --[[
     This script builds the Roblox project by doing two things:
     1. Creating a temporary build file from the Rojo project
-    2. Merging the Rojo project with game.rbxl for a final build.rbxl
+    2. Merging the Rojo project with demo.rbxl for a final build.rbxl
 
     When syncing code to a local file, *always* do it to build.rbxl. This ensures version control doesn't screw up.
 
@@ -41,12 +41,12 @@ if not rojoBuild.ok then
 end
 
 -- Load main build file
-if not fs.isFile("game.rbxl") then
-    print("Error: 'game.rbxl' template file not found. Save your game setup to the root first!")
+if not fs.isFile("demo.rbxl") then
+    print("Error: 'demo.rbxl' template file not found. Save your demo place setup to the root first!")
     process.exit(1)
 end
 
-local baseFileBuffer = fs.readFile("game.rbxl")
+local baseFileBuffer = fs.readFile("demo.rbxl")
 local syncFileBuffer = fs.readFile("temp_sync.rbxm")
 
 local game = roblox.deserializePlace(baseFileBuffer)
