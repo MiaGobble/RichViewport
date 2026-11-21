@@ -18,7 +18,7 @@ local RichViewport = {}
 RichViewport.__index = RichViewport
 
 -- Imports
-local Packages = script.Parent.Packages
+local Packages = script.Parent
 local Seam = require(Packages.Seam)
 local Spatial = require(script.Spatial)
 local Overlays = require(script.Overlays)

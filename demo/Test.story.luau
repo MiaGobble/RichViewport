@@ -12,7 +12,7 @@ local Packages = Modules.Packages
 local Seam = require(Packages.Seam)
 local SeamStoryUtils = require(Packages.SeamStoryUtils)
 local UILabs = require(Packages.UILabs)
-local RichViewport = require(Modules.RichViewport)
+local RichViewport = require(Packages.RichViewport)
 local Spatial = RichViewport.Spatial
 
 Story.controls = {

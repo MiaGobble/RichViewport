@@ -6,7 +6,7 @@
 
 local Overlays = {}
 
-local Packages = script.Parent.Parent.Packages
+local Packages = script.Parent.Parent
 local Seam = require(Packages.Seam)
 local Spatial = require(script.Parent.Spatial)
 

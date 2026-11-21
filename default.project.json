@@ -1,16 +1,24 @@
 {
-  "name": "ViewportParticles",
+  "name": "RichViewport",
 
   "tree": {
     "$className": "DataModel",
 
     "ReplicatedFirst": {
       "Modules": {
-        "$path": "src/Client/Modules",
+        "$className": "Folder",
 
         "Packages": {
           "$path": "roblox_packages",
-          "$className": "Folder"
+          "$className": "Folder",
+
+          "RichViewport": {
+            "$path": "src"
+          }
+        },
+
+        "Test.story": {
+          "$path": "demo/Test.story.luau"
         }
       }
     }
