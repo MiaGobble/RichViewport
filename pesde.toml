@@ -3,7 +3,7 @@ version = "0.1.0"
 description = "ViewportFrame wrapper with depth-aware particle mimics (requires Studio UI Particles beta)"
 license = "MIT"
 authors = ["Mia Gobble"]
-repository = "https://github.com/MiaGobble/viewport-particles"
+repository = "https://github.com/MiaGobble/RichViewport"
 private = false
 
 includes = [
