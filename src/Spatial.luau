@@ -6,7 +6,7 @@
 
 local Spatial = {}
 
--- Single layer bounds used for Behind, Front, and Guide together.
+-- Types
 export type LayerBounds = {
 	CenterX : number,
 	CenterY : number,
@@ -16,7 +16,8 @@ export type LayerBounds = {
 	Depth : number,
 }
 
-local CORNER_OFFSETS = {
+-- Constants
+const CORNER_OFFSETS = {
 	Vector3.new(-1, -1, -1),
 	Vector3.new(-1, -1, 1),
 	Vector3.new(-1, 1, -1),
@@ -27,94 +28,20 @@ local CORNER_OFFSETS = {
 	Vector3.new(1, 1, 1),
 }
 
-local AREA_KEEP_RATIO = 1.12
+const AREA_KEEP_RATIO = 1.12
 
---[=[
-	Collects every `BasePart` under `Root`, including `Root` itself when applicable.
-
-	@within Spatial
-]=]
-function Spatial.CollectParts(Root : Instance) : {BasePart}
-	local Parts = {}
-
-	if Root:IsA("BasePart") then
-		table.insert(Parts, Root)
-	end
-
-	for _, Descendant in Root:QueryDescendants("BasePart") do
-		table.insert(Parts, Descendant)
-	end
-
-	return Parts
-end
-
---[=[
-	World point → viewport pixels using vertical FOV and `PixelSize` aspect.
-	Returns `nil` when the point is behind the camera.
-
-	@within Spatial
-]=]
-function Spatial.WorldToViewportPixels(Camera : Camera, WorldPoint : Vector3, PixelSize : Vector2) : (number?, number?, number?)
-	local Relative = Camera.CFrame:PointToObjectSpace(WorldPoint)
-	local Depth = -Relative.Z
-
-	if Depth <= 0 then
-		return nil
-	end
-
-	local AspectRatio = PixelSize.X / PixelSize.Y
-	local HalfHeight = math.tan(math.rad(Camera.FieldOfView) * 0.5) * Depth
-	local HalfWidth = HalfHeight * AspectRatio
-
-	local ScreenX = (Relative.X / HalfWidth * 0.5 + 0.5) * PixelSize.X
-	local ScreenY = (-Relative.Y / HalfHeight * 0.5 + 0.5) * PixelSize.Y
-
-	return ScreenX, ScreenY, Depth
-end
-
---[=[
-	Pixels per stud at a given camera depth.
-
-	@within Spatial
-]=]
-function Spatial.GetPixelsPerStud(Camera : Camera, Depth : number, PixelSize : Vector2) : number
-	if Depth <= 0 or PixelSize.Y <= 0 then
-		return 1
-	end
-
-	local HalfHeight = math.tan(math.rad(Camera.FieldOfView) * 0.5) * Depth
-	return PixelSize.Y / (2 * HalfHeight)
-end
-
---[=[
-	Bounding focus CFrame for a model or part (used when framing a camera).
-
-	@within Spatial
-]=]
-function Spatial.GetFocusCFrame(Root : Instance) : CFrame
-	if Root:IsA("Model") then
-		return select(1, Root:GetBoundingBox())
-	end
-
-	if Root:IsA("BasePart") then
-		return Root.CFrame
-	end
-
-	return CFrame.new()
-end
-
-local function FitOrientedBounds(Points : {Vector2}, AngleRadians : number) : (number, number, number, number)
-	local Cos = math.cos(AngleRadians)
-	local Sin = math.sin(AngleRadians)
+local function FitOrientedBounds(points : {Vector2}, angleRadians : number) : (number, number, number, number)
+	local Cos = math.cos(angleRadians)
+	local Sin = math.sin(angleRadians)
 
 	local MinX = math.huge
 	local MinY = math.huge
 	local MaxX = -math.huge
 	local MaxY = -math.huge
 
-	for _, Point in Points do
-		local LocalX = Point.X * Cos + Point.Y * Sin
-		local LocalY = -Point.X * Sin + Point.Y * Cos
+	for _, point in points do
+		local LocalX = point.X * Cos + point.Y * Sin
+		local LocalY = -point.X * Sin + point.Y * Cos
 
 		MinX = math.min(MinX, LocalX)
 		MinY = math.min(MinY, LocalY)
@@ -133,9 +60,9 @@ local function FitOrientedBounds(Points : {Vector2}, AngleRadians : number) : (n
 	return Width, Height, CenterX, CenterY
 end
 
-local function ScreenAngleOfWorldAxis(Camera : Camera, Origin : Vector3, Axis : Vector3, PixelSize : Vector2) : number?
-	local OriginX, OriginY = Spatial.WorldToViewportPixels(Camera, Origin, PixelSize)
-	local TipX, TipY = Spatial.WorldToViewportPixels(Camera, Origin + Axis, PixelSize)
+local function ScreenAngleOfWorldAxis(camera : Camera, origin : Vector3, axis : Vector3, pixelSize : Vector2) : number?
+	local OriginX, OriginY = Spatial.WorldToViewportPixels(camera, origin, pixelSize)
+	local TipX, TipY = Spatial.WorldToViewportPixels(camera, origin + axis, pixelSize)
 
 	if not OriginX or not TipX then
 		return nil
@@ -151,9 +78,83 @@ local function ScreenAngleOfWorldAxis(Camera : Camera, Origin : Vector3, Axis : 
 	return math.atan2(DeltaY, DeltaX)
 end
 
-local function ShortestAngleDeltaDegrees(From : number, To : number) : number
-	local Delta = (To - From + 180) % 360 - 180
+local function ShortestAngleDeltaDegrees(from : number, to : number) : number
+	local Delta = (to - from + 180) % 360 - 180
 	return Delta
+end
+
+--[=[
+	Collects every `BasePart` under `Root`, including `Root` itself when applicable.
+
+	@within Spatial
+]=]
+function Spatial.CollectParts(root : Instance) : {BasePart}
+	local Parts = {}
+
+	if root:IsA("BasePart") then
+		table.insert(Parts, root)
+	end
+
+	for _, descendant in root:QueryDescendants("BasePart") do
+		table.insert(Parts, descendant)
+	end
+
+	return Parts
+end
+
+--[=[
+	World point → viewport pixels using vertical FOV and `PixelSize` aspect.
+	Returns `nil` when the point is behind the camera.
+
+	@within Spatial
+]=]
+function Spatial.WorldToViewportPixels(camera : Camera, worldPoint : Vector3, pixelSize : Vector2) : (number?, number?, number?)
+	local Relative = camera.CFrame:PointToObjectSpace(worldPoint)
+	local Depth = -Relative.Z
+
+	if Depth <= 0 then
+		return nil
+	end
+
+	local AspectRatio = pixelSize.X / pixelSize.Y
+	local HalfHeight = math.tan(math.rad(camera.FieldOfView) * 0.5) * Depth
+	local HalfWidth = HalfHeight * AspectRatio
+
+	local ScreenX = (Relative.X / HalfWidth * 0.5 + 0.5) * pixelSize.X
+	local ScreenY = (-Relative.Y / HalfHeight * 0.5 + 0.5) * pixelSize.Y
+
+	return ScreenX, ScreenY, Depth
+end
+
+--[=[
+	Pixels per stud at a given camera depth.
+
+	@within Spatial
+]=]
+function Spatial.GetPixelsPerStud(camera : Camera, depth : number, pixelSize : Vector2) : number
+	if depth <= 0 or pixelSize.Y <= 0 then
+		return 1
+	end
+
+	local HalfHeight = math.tan(math.rad(camera.FieldOfView) * 0.5) * depth
+	return pixelSize.Y / (2 * HalfHeight)
+end
+
+--[=[
+	Bounding focus CFrame for a model or part (used when framing a camera).
+
+	@within Spatial
+]=]
+function Spatial.GetFocusCFrame(root : Instance) : CFrame
+	if root:IsA("Model") then
+		return select(1, root:GetBoundingBox())
+	end
+
+	if root:IsA("BasePart") then
+		return root.CFrame
+	end
+
+	return CFrame.new()
 end
 
 --[=[
@@ -164,20 +165,20 @@ end
 
 	@within Spatial
 ]=]
-function Spatial.GetPartLayerBounds(Camera : Camera, Part : BasePart, PixelSize : Vector2, PreviousRotation : number?) : LayerBounds?
-	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
+function Spatial.GetPartLayerBounds(camera : Camera, part : BasePart, pixelSize : Vector2, previousRotation : number?) : LayerBounds?
+	if pixelSize.X <= 0 or pixelSize.Y <= 0 then
 		return nil
 	end
 
-	local HalfSize = Part.Size * 0.5
-	local PartCFrame = Part.CFrame
+	local HalfSize = part.Size * 0.5
+	local PartCFrame = part.CFrame
 	local Points = {}
 	local DepthSum = 0
 	local SampleCount = 0
 
-	for _, Offset in CORNER_OFFSETS do
-		local WorldPoint = PartCFrame:PointToWorldSpace(Offset * HalfSize)
-		local PixelX, PixelY, Depth = Spatial.WorldToViewportPixels(Camera, WorldPoint, PixelSize)
+	for _, offset in CORNER_OFFSETS do
+		local WorldPoint = PartCFrame:PointToWorldSpace(offset * HalfSize)
+		local PixelX, PixelY, Depth = Spatial.WorldToViewportPixels(camera, WorldPoint, pixelSize)
 
 		if not PixelX then
 			continue
@@ -196,12 +197,12 @@ function Spatial.GetPartLayerBounds(Camera : Camera, Part : BasePart, PixelSize 
 	local Origin = PartCFrame.Position
 	local CandidateAngles = {}
 
-	if PreviousRotation ~= nil then
-		table.insert(CandidateAngles, math.rad(PreviousRotation))
+	if previousRotation ~= nil then
+		table.insert(CandidateAngles, math.rad(previousRotation))
 	end
 
-	for _, Axis in {PartCFrame.RightVector, PartCFrame.UpVector, PartCFrame.LookVector} do
-		local Angle = ScreenAngleOfWorldAxis(Camera, Origin, Axis, PixelSize)
+	for _, axis in {PartCFrame.RightVector, PartCFrame.UpVector, PartCFrame.LookVector} do
+		local Angle = ScreenAngleOfWorldAxis(camera, Origin, axis, pixelSize)
 		if Angle then
 			table.insert(CandidateAngles, Angle)
 		end
@@ -218,8 +219,8 @@ function Spatial.GetPartLayerBounds(Camera : Camera, Part : BasePart, PixelSize 
 	local BestCenterY = Points[1].Y
 	local BestAngle = CandidateAngles[1]
 
-	for _, Angle in CandidateAngles do
-		local Width, Height, CenterX, CenterY = FitOrientedBounds(Points, Angle)
+	for _, angle in CandidateAngles do
+		local Width, Height, CenterX, CenterY = FitOrientedBounds(Points, angle)
 		local Area = Width * Height
 
 		if Area < BestArea then
@@ -228,13 +229,13 @@ function Spatial.GetPartLayerBounds(Camera : Camera, Part : BasePart, PixelSize 
 			BestHeight = Height
 			BestCenterX = CenterX
 			BestCenterY = CenterY
-			BestAngle = Angle
+			BestAngle = angle
 		end
 	end
 
 	-- Prefer the previous angle when it stays near-optimal (avoids 90° snaps).
-	if PreviousRotation ~= nil then
-		local PreviousRadians = math.rad(PreviousRotation)
+	if previousRotation ~= nil then
+		local PreviousRadians = math.rad(previousRotation)
 		local Width, Height, CenterX, CenterY = FitOrientedBounds(Points, PreviousRadians)
 		local PreviousArea = Width * Height
 
@@ -253,20 +254,20 @@ function Spatial.GetPartLayerBounds(Camera : Camera, Part : BasePart, PixelSize 
 			local StableCenterX = BestCenterX
 			local StableCenterY = BestCenterY
 
-			for _, Angle in CandidateAngles do
-				local WidthCandidate, HeightCandidate, CenterXCandidate, CenterYCandidate = FitOrientedBounds(Points, Angle)
+			for _, angle in CandidateAngles do
+				local WidthCandidate, HeightCandidate, CenterXCandidate, CenterYCandidate = FitOrientedBounds(Points, angle)
 				local Area = WidthCandidate * HeightCandidate
 
 				if Area > BestArea * AREA_KEEP_RATIO then
 					continue
 				end
 
-				local Degrees = math.deg(Angle)
-				local Delta = math.abs(ShortestAngleDeltaDegrees(PreviousRotation, Degrees))
+				local Degrees = math.deg(angle)
+				local Delta = math.abs(ShortestAngleDeltaDegrees(previousRotation, Degrees))
 
 				if Delta < BestDelta then
 					BestDelta = Delta
-					StableAngle = Angle
+					StableAngle = angle
 					StableWidth = WidthCandidate
 					StableHeight = HeightCandidate
 					StableCenterX = CenterXCandidate
@@ -284,9 +285,9 @@ function Spatial.GetPartLayerBounds(Camera : Camera, Part : BasePart, PixelSize 
 
 	local RotationDegrees = math.deg(BestAngle)
 
-	if PreviousRotation ~= nil then
+	if previousRotation ~= nil then
 		-- Unwrap so Rotation is continuous for GuiObject + LockedToParent.
-		RotationDegrees = PreviousRotation + ShortestAngleDeltaDegrees(PreviousRotation, RotationDegrees)
+		RotationDegrees = previousRotation + ShortestAngleDeltaDegrees(previousRotation, RotationDegrees)
 	end
 
 	return {

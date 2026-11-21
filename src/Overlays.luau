@@ -6,10 +6,7 @@
 
 local Overlays = {}
 
-local Packages = script.Parent.Parent
-local Seam = require(Packages.Seam)
-local Spatial = require(script.Parent.Spatial)
-
+-- Types
 export type PartFrames = {
 	Front : Frame,
 	Behind : Frame,
@@ -27,17 +24,69 @@ export type OverlayStack = {
 	SourceHolder : Folder,
 }
 
-local BOUNDS_BACKGROUND_TRANSPARENCY = 0.85
-local BOUNDS_STROKE_TRANSPARENCY = 0
-local GUIDE_COLOR = Color3.fromRGB(0, 255, 140)
+-- Constants
+const BOUNDS_BACKGROUND_TRANSPARENCY = 0.85
+const BOUNDS_STROKE_TRANSPARENCY = 0
+const GUIDE_COLOR = Color3.fromRGB(0, 255, 140)
+
+-- Imports
+local Packages = script.Parent.Parent
+local Seam = require(Packages.Seam)
+local Spatial = require(script.Parent.Spatial)
+
+local function StripParticleEmitters(root : Instance)
+	if root:IsA("ParticleEmitter") then
+		root:Destroy()
+		return
+	end
+
+	for _, emitter in root:QueryDescendants("ParticleEmitter") do
+		emitter:Destroy()
+	end
+end
+
+local function CreateGuide(scope : any, parent : Frame, name : string) : Frame
+	return scope:New("Frame", {
+		Name = name,
+		Parent = parent,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = GUIDE_COLOR,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ClipsDescendants = false,
+		Visible = false,
+
+		[Seam.Children] = {
+			scope:New("UIStroke", {
+				Thickness = 1,
+				Color = GUIDE_COLOR,
+				Transparency = 1,
+			}),
+		},
+	})
+end
+
+local function ApplyLayerTransform(scope : any, frame : Frame, bounds : Spatial.LayerBounds)
+	scope:New(frame, {
+		Visible = true,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(bounds.CenterX, bounds.CenterY),
+		Size = UDim2.fromOffset(bounds.Width, bounds.Height),
+		Rotation = bounds.Rotation,
+		BackgroundTransparency = 1,
+		ClipsDescendants = false,
+	})
+end
 
 --[=[
 	Builds the transparent viewport sandwich under `Parent`.
 
 	@within Overlays
 ]=]
-function Overlays.CreateStack(Scope : any, Parent : GuiObject, Camera : Camera) : OverlayStack
-	local Behind = Scope:New("Frame", {
+function Overlays.CreateStack(scope : any, parent : GuiObject, camera : Camera) : OverlayStack
+	local Behind = scope:New("Frame", {
 		Name = "BehindOverlay",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
@@ -45,16 +94,16 @@ function Overlays.CreateStack(Scope : any, Parent : GuiObject, Camera : Camera) 
 		ZIndex = 1,
 	})
 
-	local Viewport = Scope:New("ViewportFrame", {
+	local Viewport = scope:New("ViewportFrame", {
 		Name = "Viewport",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		CurrentCamera = Camera,
+		CurrentCamera = camera,
 		ZIndex = 2,
 	})
 
-	local Front = Scope:New("Frame", {
+	local Front = scope:New("Frame", {
 		Name = "FrontOverlay",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
@@ -62,7 +111,7 @@ function Overlays.CreateStack(Scope : any, Parent : GuiObject, Camera : Camera) 
 		ZIndex = 3,
 	})
 
-	local LayerStack = Scope:New("Frame", {
+	local LayerStack = scope:New("Frame", {
 		Name = "LayerStack",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
@@ -71,13 +120,13 @@ function Overlays.CreateStack(Scope : any, Parent : GuiObject, Camera : Camera) 
 		ZIndex = 1,
 	})
 
-	local SourceHolder = Scope:New("Folder", {
+	local SourceHolder = scope:New("Folder", {
 		Name = "SourceHolder",
 	})
 
-	local Root = Scope:New("Frame", {
+	local Root = scope:New("Frame", {
 		Name = "RichViewportRoot",
-		Parent = Parent,
+		Parent = parent,
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -101,49 +150,15 @@ function Overlays.CreateStack(Scope : any, Parent : GuiObject, Camera : Camera) 
 	}
 end
 
-local function StripParticleEmitters(Root : Instance)
-	if Root:IsA("ParticleEmitter") then
-		Root:Destroy()
-		return
-	end
-
-	for _, Emitter in Root:QueryDescendants("ParticleEmitter") do
-		Emitter:Destroy()
-	end
-end
-
-local function CreateGuide(Scope : any, Parent : Frame, Name : string) : Frame
-	return Scope:New("Frame", {
-		Name = Name,
-		Parent = Parent,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = GUIDE_COLOR,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		ClipsDescendants = false,
-		Visible = false,
-
-		[Seam.Children] = {
-			Scope:New("UIStroke", {
-				Thickness = 1,
-				Color = GUIDE_COLOR,
-				Transparency = 1,
-			}),
-		},
-	})
-end
-
 --[=[
 	Creates Front/Behind emission hosts for shared (non-layered) mode.
 
 	@within Overlays
 ]=]
-function Overlays.CreatePartFrames(Scope : any, Part : BasePart, BehindOverlay : Frame, FrontOverlay : Frame) : PartFrames
-	local Behind = Scope:New("Frame", {
-		Name = `{Part.Name}_Behind`,
-		Parent = BehindOverlay,
+function Overlays.CreatePartFrames(scope : any, part : BasePart, behindOverlay : Frame, frontOverlay : Frame) : PartFrames
+	local Behind = scope:New("Frame", {
+		Name = `{part.Name}_Behind`,
+		Parent = behindOverlay,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -151,9 +166,9 @@ function Overlays.CreatePartFrames(Scope : any, Part : BasePart, BehindOverlay :
 		Visible = false,
 	})
 
-	local Front = Scope:New("Frame", {
-		Name = `{Part.Name}_Front`,
-		Parent = FrontOverlay,
+	local Front = scope:New("Frame", {
+		Name = `{part.Name}_Front`,
+		Parent = frontOverlay,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -164,7 +179,7 @@ function Overlays.CreatePartFrames(Scope : any, Part : BasePart, BehindOverlay :
 	return {
 		Front = Front,
 		Behind = Behind,
-		Guide = CreateGuide(Scope, Front, `{Part.Name}_Guide`),
+		Guide = CreateGuide(scope, Front, `{part.Name}_Guide`),
 	}
 end
 
@@ -176,10 +191,10 @@ end
 
 	@within Overlays
 ]=]
-function Overlays.CreatePartLayerSlice(Scope : any, Part : BasePart, Parent : GuiObject, Camera : Camera) : PartFrames
-	local Behind = Scope:New("Frame", {
-		Name = `{Part.Name}_Behind`,
-		Parent = Parent,
+function Overlays.CreatePartLayerSlice(scope : any, part : BasePart, parent : GuiObject, camera : Camera) : PartFrames
+	local Behind = scope:New("Frame", {
+		Name = `{part.Name}_Behind`,
+		Parent = parent,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -187,18 +202,18 @@ function Overlays.CreatePartLayerSlice(Scope : any, Part : BasePart, Parent : Gu
 		Visible = false,
 	})
 
-	local Viewport = Scope:New("ViewportFrame", {
-		Name = `{Part.Name}_Viewport`,
-		Parent = Parent,
+	local Viewport = scope:New("ViewportFrame", {
+		Name = `{part.Name}_Viewport`,
+		Parent = parent,
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		CurrentCamera = Camera,
+		CurrentCamera = camera,
 	})
 
-	local Front = Scope:New("Frame", {
-		Name = `{Part.Name}_Front`,
-		Parent = Parent,
+	local Front = scope:New("Frame", {
+		Name = `{part.Name}_Front`,
+		Parent = parent,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -206,14 +221,14 @@ function Overlays.CreatePartLayerSlice(Scope : any, Part : BasePart, Parent : Gu
 		Visible = false,
 	})
 
-	local Visual = Part:Clone()
+	local Visual = part:Clone()
 	StripParticleEmitters(Visual)
 	Visual.Parent = Viewport
 
 	return {
 		Front = Front,
 		Behind = Behind,
-		Guide = CreateGuide(Scope, Front, `{Part.Name}_Guide`),
+		Guide = CreateGuide(scope, Front, `{part.Name}_Guide`),
 		Viewport = Viewport,
 		Visual = Visual,
 	}
@@ -224,31 +239,19 @@ end
 
 	@within Overlays
 ]=]
-function Overlays.SyncPartVisual(Visual : BasePart, Source : BasePart)
-	Visual.CFrame = Source.CFrame
-	Visual.Size = Source.Size
-	Visual.Color = Source.Color
-	Visual.Transparency = Source.Transparency
-	Visual.Material = Source.Material
-	Visual.MaterialVariant = Source.MaterialVariant
-	Visual.Reflectance = Source.Reflectance
-	Visual.CastShadow = Source.CastShadow
+function Overlays.SyncPartVisual(visual : BasePart, source : BasePart)
+	visual.CFrame = source.CFrame
+	visual.Size = source.Size
+	visual.Color = source.Color
+	visual.Transparency = source.Transparency
+	visual.Material = source.Material
+	visual.MaterialVariant = source.MaterialVariant
+	visual.Reflectance = source.Reflectance
+	visual.CastShadow = source.CastShadow
 
-	if Visual:IsA("MeshPart") and Source:IsA("MeshPart") then
-		Visual.TextureID = Source.TextureID
+	if visual:IsA("MeshPart") and source:IsA("MeshPart") then
+		visual.TextureID = source.TextureID
 	end
-end
-
-local function ApplyLayerTransform(Scope : any, Frame : Frame, Bounds : Spatial.LayerBounds)
-	Scope:New(Frame, {
-		Visible = true,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(Bounds.CenterX, Bounds.CenterY),
-		Size = UDim2.fromOffset(Bounds.Width, Bounds.Height),
-		Rotation = Bounds.Rotation,
-		BackgroundTransparency = 1,
-		ClipsDescendants = false,
-	})
 end
 
 --[=[
@@ -256,16 +259,16 @@ end
 
 	@within Overlays
 ]=]
-function Overlays.UpdatePartFrames(Scope : any, Frames : PartFrames, Bounds : Spatial.LayerBounds, ShowDebug : boolean)
-	ApplyLayerTransform(Scope, Frames.Front, Bounds)
-	ApplyLayerTransform(Scope, Frames.Behind, Bounds)
+function Overlays.UpdatePartFrames(scope : any, frames : PartFrames, bounds : Spatial.LayerBounds, isDebugVisible : boolean)
+	ApplyLayerTransform(scope, frames.Front, bounds)
+	ApplyLayerTransform(scope, frames.Behind, bounds)
 
-	local BackgroundTransparency = if ShowDebug then BOUNDS_BACKGROUND_TRANSPARENCY else 1
-	local StrokeTransparency = if ShowDebug then BOUNDS_STROKE_TRANSPARENCY else 1
-	local Stroke = Frames.Guide:FindFirstChildWhichIsA("UIStroke")
+	local BackgroundTransparency = if isDebugVisible then BOUNDS_BACKGROUND_TRANSPARENCY else 1
+	local StrokeTransparency = if isDebugVisible then BOUNDS_STROKE_TRANSPARENCY else 1
+	local Stroke = frames.Guide:FindFirstChildWhichIsA("UIStroke")
 
-	Scope:New(Frames.Guide, {
-		Visible = ShowDebug,
+	scope:New(frames.Guide, {
+		Visible = isDebugVisible,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(1, 1),
@@ -276,7 +279,7 @@ function Overlays.UpdatePartFrames(Scope : any, Frames : PartFrames, Bounds : Sp
 	})
 
 	if Stroke then
-		Scope:New(Stroke, {
+		scope:New(Stroke, {
 			Transparency = StrokeTransparency,
 		})
 	end
@@ -287,10 +290,10 @@ end
 
 	@within Overlays
 ]=]
-function Overlays.HidePartFrames(Scope : any, Frames : PartFrames)
-	Scope:New(Frames.Front, {Visible = false})
-	Scope:New(Frames.Behind, {Visible = false})
-	Scope:New(Frames.Guide, {Visible = false})
+function Overlays.HidePartFrames(scope : any, frames : PartFrames)
+	scope:New(frames.Front, {Visible = false,})
+	scope:New(frames.Behind, {Visible = false,})
+	scope:New(frames.Guide, {Visible = false,})
 end
 
 --[=[
@@ -298,14 +301,14 @@ end
 
 	@within Overlays
 ]=]
-function Overlays.ApplyDepthRanking(Scope : any, Ranked : {{Front : Frame, Behind : Frame, Depth : number}})
-	table.sort(Ranked, function(A, B)
-		return A.Depth > B.Depth
+function Overlays.ApplyDepthRanking(scope : any, ranked : {{Front : Frame, Behind : Frame, Depth : number}})
+	table.sort(ranked, function(a, b)
+		return a.Depth > b.Depth
 	end)
 
-	for Index, Entry in Ranked do
-		Scope:New(Entry.Behind, {ZIndex = Index})
-		Scope:New(Entry.Front, {ZIndex = Index})
+	for index, entry in ranked do
+		scope:New(entry.Behind, {ZIndex = index,})
+		scope:New(entry.Front, {ZIndex = index,})
 	end
 end
 
@@ -314,17 +317,17 @@ end
 
 	@within Overlays
 ]=]
-function Overlays.ApplyLayeredDepthRanking(Scope : any, Ranked : {{Front : Frame, Behind : Frame, Viewport : ViewportFrame, Depth : number}})
-	table.sort(Ranked, function(A, B)
-		return A.Depth > B.Depth
+function Overlays.ApplyLayeredDepthRanking(scope : any, ranked : {{Front : Frame, Behind : Frame, Viewport : ViewportFrame, Depth : number}})
+	table.sort(ranked, function(a, b)
+		return a.Depth > b.Depth
 	end)
 
-	for Index, Entry in Ranked do
-		local Base = (Index - 1) * 3
+	for index, entry in ranked do
+		local Base = (index - 1) * 3
 
-		Scope:New(Entry.Behind, {ZIndex = Base + 1})
-		Scope:New(Entry.Viewport, {ZIndex = Base + 2})
-		Scope:New(Entry.Front, {ZIndex = Base + 3})
+		scope:New(entry.Behind, {ZIndex = Base + 1,})
+		scope:New(entry.Viewport, {ZIndex = Base + 2,})
+		scope:New(entry.Front, {ZIndex = Base + 3,})
 	end
 end
 
