@@ -1,10 +1,10 @@
 local Story = {}
 
 -- Constants
-local VIEWPORT_BACKGROUND_COLOR = Color3.fromRGB(20, 20, 24)
+const VIEWPORT_BACKGROUND_COLOR = Color3.fromRGB(20, 20, 24)
 
 -- Services
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Imports
 local Modules = script.Parent
@@ -58,7 +58,7 @@ function Story.render(props)
 	local View = RichViewport.new(SourceAsset, Camera, Host)
 	Scope:AddObject(View)
 
-	local BasePartLayeringEnabled = false
+	local IsBasePartLayeringEnabled = false
 
 	local function ApplyControls()
 		local Object = View.Object
@@ -85,19 +85,19 @@ function Story.render(props)
 			View:HideParticles()
 		end
 
-		if Controls.BasePartLayering.Value and not BasePartLayeringEnabled then
+		if Controls.BasePartLayering.Value and not IsBasePartLayeringEnabled then
 			View:EnableBasePartLayering()
-			BasePartLayeringEnabled = true
-		elseif not Controls.BasePartLayering.Value and BasePartLayeringEnabled then
+			IsBasePartLayeringEnabled = true
+		elseif not Controls.BasePartLayering.Value and IsBasePartLayeringEnabled then
 			View:DisableBasePartLayering()
-			BasePartLayeringEnabled = false
+			IsBasePartLayeringEnabled = false
 		end
 
 		View:Refresh()
 	end
 
-	for _, Control in Controls do
-		Scope:OnChanged(Control, ApplyControls)
+	for _, control in Controls do
+		Scope:OnChanged(control, ApplyControls)
 	end
 
 	ApplyControls()
