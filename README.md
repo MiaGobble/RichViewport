@@ -130,7 +130,7 @@ Farther → smaller PPS → smaller / slower 2D particles.
 
 A world direction is taken into camera space. The **screen residual** is $(R_x, -R_y)$:
 
-- **Angle** = $\operatorname{atan2}(R_y^{\text{screen}}, R_x)$ (0 = screen right)
+- **Angle** = $\text{atan2}(R_y^{\text{screen}}, R_x)$ (0 = screen right)
 - **ScreenFraction** = $\lVert(R_x,-R_y)\rVert / \lVert R\rVert$  
   → 1 = fully lateral, 0 = pure depth (into / out of the camera)
 
