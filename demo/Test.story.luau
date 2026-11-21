@@ -16,11 +16,11 @@ local RichViewport = require(Packages.RichViewport)
 local Spatial = RichViewport.Spatial
 
 Story.controls = {
-	FieldOfView = UILabs.Slider(70, 1, 120),
-	CameraDistance = UILabs.Slider(8, 0.5, 50),
+	FieldOfView = UILabs.Slider(59, 1, 120),
+	CameraDistance = UILabs.Slider(20, 0.5, 50),
 	ViewportScale = UILabs.Slider(1, 0.1, 1),
-	RotationX = UILabs.Slider(0, -180, 180),
-	RotationY = UILabs.Slider(0, -180, 180),
+	RotationX = UILabs.Slider(16, -180, 180),
+	RotationY = UILabs.Slider(-138, -180, 180),
 	RotationZ = UILabs.Slider(0, -180, 180),
 	ShowBounds = false,
 	ShowParticles = true,
