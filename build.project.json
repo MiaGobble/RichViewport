@@ -1,0 +1,21 @@
+{
+  "name": "RichViewportBuild",
+
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedFirst": {
+      "RichViewport": {
+        "$path": "build",
+
+        "Packages": {
+          "$path": "roblox_packages",
+
+          "RichViewport": {
+            "$path": "src"
+          }
+        }
+      }
+    }
+  }
+}
