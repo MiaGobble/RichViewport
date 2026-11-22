@@ -326,8 +326,7 @@ function Particles.ApplyMotionAndPerspective(emitter2D : ParticleEmitter2D, emit
 		ParentRotation
 	)
 
-	local UsePalm = Orientation == Enum.ParticleOrientation.VelocityParallel
-		or Orientation == Enum.ParticleOrientation.VelocityPerpendicular
+	local UsePalm = if Orientation == Enum.ParticleOrientation.VelocityParallel or Orientation == Enum.ParticleOrientation.VelocityPerpendicular then true else false
 	local Facing = if UsePalm then GetPalmFacing(CameraCFrame, EmissionDirection) else 1
 	local SpeedFraction = if UsePalm then math.max(ScreenFraction, 0.35) else 1
 
