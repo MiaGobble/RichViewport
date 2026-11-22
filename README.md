@@ -1,4 +1,6 @@
 # RichViewport
+![](./img/showcase.gif)
+
 A special viewport class wrapper that supports emulated `ParticleEmitter` instances in 3D space.
 
 > [!WARNING]
