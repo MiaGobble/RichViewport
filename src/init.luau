@@ -17,13 +17,6 @@
 local RichViewport = {}
 RichViewport.__index = RichViewport
 
--- Constants
-const ASSIGNABLE = {
-	Object = true,
-	Camera = true,
-	Parent = true,
-}
-
 -- Imports
 local Packages = script.Parent
 local Seam = require(Packages.Seam)
@@ -57,7 +50,6 @@ type Fields = {
 	_RefreshedEvent : BindableEvent,
 	_ObjectWatchScope : any?,
 	_CameraWatchScope : any?,
-	_IsAssigning : boolean,
 	_IsStructureDirty : boolean,
 	_IsStructureWatchSuppressed : boolean,
 	_LayerRotationByPart : {[BasePart] : number},
@@ -120,7 +112,6 @@ function RichViewport.new(object : Instance, camera : Camera, parent : GuiObject
 		_RefreshedEvent = RefreshedEvent,
 		_ObjectWatchScope = nil,
 		_CameraWatchScope = nil,
-		_IsAssigning = false,
 		_IsStructureDirty = false,
 		_IsStructureWatchSuppressed = false,
 		_LayerRotationByPart = {},
@@ -142,8 +133,7 @@ function RichViewport.Init(self : RichViewport, object : Instance)
 	end)
 
 	RichViewport._BindCameraWatchers(self)
-	RichViewport._SetObject(self, object)
-	self:Refresh()
+	self:SetObject(object)
 	task.defer(function()
 		if not self._IsDestroyed then
 			self:Refresh()
@@ -342,6 +332,76 @@ function RichViewport.IsBasePartLayeringEnabled(self : RichViewport) : boolean
 end
 
 --[=[
+	Rebinds the viewport object. Clones `object` into the viewport and rebuilds content.
+
+	@param object Instance -- Source instance to clone into the viewport
+	@within RichViewport
+]=]
+
+function RichViewport.SetObject(self : RichViewport, object : Instance)
+	RichViewport._AssertNotDestroyed(self)
+	assert(typeof(object) == "Instance", "Object must be an Instance")
+
+	self._IsStructureWatchSuppressed = true
+
+	local Previous = self.Object
+	local Clone = object:Clone()
+	Clone.Parent = RichViewport._GetObjectParent(self)
+
+	self.Object = Clone
+
+	if Previous then
+		Previous:Destroy()
+	end
+
+	self._IsStructureWatchSuppressed = false
+
+	RichViewport._BindObjectWatchers(self)
+	RichViewport._RebuildContent(self)
+	self:Refresh()
+end
+
+--[=[
+	Rebinds the camera driving the ViewportFrame(s).
+
+	@param camera Camera
+	@within RichViewport
+]=]
+
+function RichViewport.SetCamera(self : RichViewport, camera : Camera)
+	RichViewport._AssertNotDestroyed(self)
+	assert(camera:IsA("Camera"), "Camera must be a Camera")
+
+	self.Camera = camera
+	self.ViewportFrame.CurrentCamera = camera
+
+	for _, frames in self._FramesByPart do
+		if frames.Viewport then
+			frames.Viewport.CurrentCamera = camera
+		end
+	end
+
+	RichViewport._BindCameraWatchers(self)
+	self:Refresh()
+end
+
+--[=[
+	Reparents the overlay root.
+
+	@param parent GuiObject
+	@within RichViewport
+]=]
+
+function RichViewport.SetParent(self : RichViewport, parent : GuiObject)
+	RichViewport._AssertNotDestroyed(self)
+	assert(parent:IsA("GuiObject"), "Parent must be a GuiObject")
+
+	self.Parent = parent
+	self._Root.Parent = parent
+	self:Refresh()
+end
+
+--[=[
 	Destroys the Seam scope, overlays, watchers, and fires `Destroyed`.
 
 	@within RichViewport
@@ -355,31 +415,6 @@ function RichViewport.Destroy(self : RichViewport)
 	self._IsDestroyed = true
 	self._DestroyedEvent:Fire()
 	self.Scope:Destroy()
-end
-
-function RichViewport.__newindex(self : RichViewport, key : string, value : any)
-	if rawget(self, "_IsAssigning") or rawget(self, "_IsDestroyed") then
-		rawset(self, key, value)
-		return
-	end
-
-	if not ASSIGNABLE[key] then
-		rawset(self, key, value)
-		return
-	end
-
-	rawset(self, "_IsAssigning", true)
-
-	if key == "Object" then
-		RichViewport._SetObject(self, value)
-	elseif key == "Camera" then
-		RichViewport._SetCamera(self, value)
-	elseif key == "Parent" then
-		RichViewport._SetParent(self, value)
-	end
-
-	rawset(self, "_IsAssigning", false)
-	self:Refresh()
 end
 
 function RichViewport._AssertNotDestroyed(self : RichViewport)
@@ -518,7 +553,7 @@ function RichViewport._RebuildContent(self : RichViewport)
 	self.ViewportFrame.Visible = not Layered
 	self._FrontOverlay.Visible = not Layered
 
-	local Object = rawget(self, "Object")
+	local Object = self.Object
 	if Object then
 		Object.Parent = RichViewport._GetObjectParent(self)
 	end
@@ -553,66 +588,22 @@ function RichViewport._RebuildContent(self : RichViewport)
 	self._IsStructureWatchSuppressed = false
 end
 
-function RichViewport._SetObject(self : RichViewport, source : Instance)
-	RichViewport._AssertNotDestroyed(self)
-	assert(typeof(source) == "Instance", "Object must be an Instance")
-
-	self._IsStructureWatchSuppressed = true
-
-	local Previous = rawget(self, "Object")
-	local Clone = source:Clone()
-	Clone.Parent = RichViewport._GetObjectParent(self)
-
-	rawset(self, "Object", Clone)
-
-	if Previous then
-		Previous:Destroy()
-	end
-
-	self._IsStructureWatchSuppressed = false
-
-	RichViewport._BindObjectWatchers(self)
-	RichViewport._RebuildContent(self)
-end
-
-function RichViewport._SetCamera(self : RichViewport, camera : Camera)
-	RichViewport._AssertNotDestroyed(self)
-	assert(camera:IsA("Camera"), "Camera must be a Camera")
-
-	rawset(self, "Camera", camera)
-	self.ViewportFrame.CurrentCamera = camera
-
-	for _, frames in self._FramesByPart do
-		if frames.Viewport then
-			frames.Viewport.CurrentCamera = camera
-		end
-	end
-
-	RichViewport._BindCameraWatchers(self)
-end
-
-function RichViewport._SetParent(self : RichViewport, parent : GuiObject)
-	RichViewport._AssertNotDestroyed(self)
-	assert(parent:IsA("GuiObject"), "Parent must be a GuiObject")
-
-	rawset(self, "Parent", parent)
-	self._Root.Parent = parent
-end
-
 --[=[
 	@prop Object Instance
 	@within RichViewport
-	Live clone inside the ViewportFrame. Assigning a new Instance clones it in.
+	Live clone inside the ViewportFrame. Rebind with `SetObject`.
 ]=]
 
 --[=[
 	@prop Camera Camera
 	@within RichViewport
+	Rebind with `SetCamera`.
 ]=]
 
 --[=[
 	@prop Parent GuiObject
 	@within RichViewport
+	Rebind with `SetParent`.
 ]=]
 
 --[=[

@@ -33,14 +33,9 @@ local View = RichViewport.new(SourceModel, Camera, ParentFrame)
 
 ### Properties
 
-Assignable (rebinding refreshes content):
-
-- `Object` — live viewport clone
-- `Camera`
-- `Parent`
-
-Read-only / owned:
-
+- `Object` — live viewport clone (rebind with `SetObject`)
+- `Camera` — rebind with `SetCamera`
+- `Parent` — rebind with `SetParent`
 - `ViewportFrame`
 - `Scope` — Seam scope (destroyed with the view)
 - `Destroyed` / `Refreshed` — signals
@@ -54,6 +49,9 @@ Submodules (also available as `RichViewport.Spatial`, `.Overlays`, `.Particles`)
 ### Methods
 | Method | Description |
 | --- | --- |
+| `SetObject(Object)` | Clone a new source into the viewport and rebuild |
+| `SetCamera(Camera)` | Rebind the camera driving the ViewportFrame(s) |
+| `SetParent(Parent)` | Reparent the overlay root |
 | `Refresh()` | Force bounds + particle mimic update; fires `Refreshed` |
 | `ShowDebug()` / `HideDebug()` | Oriented bound guides (hidden by default) |
 | `ShowParticles()` / `HideParticles()` | Particle mimics (shown by default) |
