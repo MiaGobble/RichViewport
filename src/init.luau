@@ -219,15 +219,15 @@ function RichViewport.Refresh(self : RichViewport)
 		Overlays.ApplyDepthRanking(self.Scope, Ranked)
 	end
 
-	Particles.UpdateMimics(
-		self.Scope,
-		self._MimicBindings,
-		self.Camera,
-		PixelSize,
-		DepthByPart,
-		BoundsByPart,
-		self._IsParticlesVisible
-	)
+	Particles.UpdateMimics({
+		Scope = self.Scope,
+		Bindings = self._MimicBindings,
+		Camera = self.Camera,
+		PixelSize = PixelSize,
+		DepthByPart = DepthByPart,
+		BoundsByPart = BoundsByPart,
+		IsParticlesVisible = self._IsParticlesVisible,
+	})
 
 	self._RefreshedEvent:Fire()
 end

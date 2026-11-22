@@ -20,6 +20,48 @@ export type MimicBinding = {
 	IsLockedToPart : boolean,
 }
 
+type ApplyOrientationAndPerspectiveProps = {
+	Emitter2D : ParticleEmitter2D,
+	Emitter3D : ParticleEmitter,
+	ParentRotation : number,
+	LocalEmissionAngle : number?,
+	Facing : number,
+	CameraCFrame : CFrame,
+}
+
+export type CreateMimicProps = {
+	Scope : any,
+	Emitter3D : ParticleEmitter,
+	Parent : GuiObject,
+	PixelsPerStud : number,
+	RateScale : number?,
+	EmissionMode : Enum.ParticleEmitter2DEmissionMode?,
+}
+
+export type ApplyMotionAndPerspectiveProps = {
+	Emitter2D : ParticleEmitter2D,
+	Emitter3D : ParticleEmitter,
+	Camera : Camera,
+	PixelsPerStud : number,
+	Part : BasePart,
+	Attachment : Attachment?,
+	FrameRotation : number?,
+}
+
+type AddBindingProps = {
+	Bindings : {MimicBinding},
+	Scope : any,
+	Emitter3D : ParticleEmitter,
+	Part : BasePart,
+	BoundsFrame : Frame,
+	Layer : "Front" | "Behind",
+	PixelsPerStud : number,
+	RateScale : number,
+	Attachment : Attachment?,
+	EmissionMode : Enum.ParticleEmitter2DEmissionMode,
+	IsEmitterEnabled : boolean,
+}
+
 -- Constants
 const VIEW_ALIGNED_THRESHOLD = 0.22
 const WAS_ENABLED_ATTRIBUTE = "RichViewportWasEnabled"
@@ -28,6 +70,16 @@ const EDGE_ON_SQUASH = NumberSequence.new(0.35)
 -- Imports
 local Spatial = require(script.Parent.Spatial)
 local Overlays = require(script.Parent.Overlays)
+
+export type UpdateMimicsProps = {
+	Scope : any,
+	Bindings : {MimicBinding},
+	Camera : Camera,
+	PixelSize : Vector2,
+	DepthByPart : {[BasePart] : number},
+	BoundsByPart : {[BasePart] : Spatial.LayerBounds},
+	IsParticlesVisible : boolean,
+}
 
 local function ScaleNumberSequence(sequence : NumberSequence, scale : number) : NumberSequence
 	local Keypoints = table.create(#sequence.Keypoints)
@@ -225,78 +277,85 @@ local function GetPalmFacing(cameraCFrame : CFrame, palmNormal : Vector3) : numb
 	return math.abs(palmNormal.Unit:Dot(-cameraCFrame.LookVector))
 end
 
-local function ApplyOrientationAndPerspective(emitter2D : ParticleEmitter2D, emitter3D : ParticleEmitter, parentRotation : number, localEmissionAngle : number?, facing : number, cameraCFrame : CFrame)
-	local Orientation = emitter3D.Orientation
-	local Squash = emitter3D.Squash
-	local EdgeOn = (1 - facing) ^ 2
-	local SpinScale = facing * facing
+local function ApplyOrientationAndPerspective(props : ApplyOrientationAndPerspectiveProps)
+	local Emitter2D = props.Emitter2D
+	local Emitter3D = props.Emitter3D
+	local ParentRotation = props.ParentRotation
+	local LocalEmissionAngle = props.LocalEmissionAngle
+	local Facing = props.Facing
+	local CameraCFrame = props.CameraCFrame
+
+	local Orientation = Emitter3D.Orientation
+	local Squash = Emitter3D.Squash
+	local EdgeOn = (1 - Facing) ^ 2
+	local SpinScale = Facing * Facing
 
 	if Orientation == Enum.ParticleOrientation.FacingCamera then
 		-- Billboard: exact authored appearance, parent-local spin only.
-		emitter2D.Rotation = NormalizeRotationRange(OffsetRotationRange(emitter3D.Rotation, parentRotation))
-		emitter2D.Squash = Squash
-		emitter2D.RotSpeed = emitter3D.RotSpeed
+		Emitter2D.Rotation = NormalizeRotationRange(OffsetRotationRange(Emitter3D.Rotation, ParentRotation))
+		Emitter2D.Squash = Squash
+		Emitter2D.RotSpeed = Emitter3D.RotSpeed
 		return
 	end
 
 	if Orientation == Enum.ParticleOrientation.FacingCameraWorldUp then
 		-- PE2D / GuiObject zero = local up; keep local Y on projected world up.
-		local ScreenUpAngle = select(1, ProjectWorldDirectionToScreen(cameraCFrame, Vector3.yAxis))
+		local ScreenUpAngle = select(1, ProjectWorldDirectionToScreen(CameraCFrame, Vector3.yAxis))
 
 		if ScreenUpAngle then
-			local LocalUpAlign = NormalizeDegrees(ScreenAtan2ToPE2D(ScreenUpAngle) - parentRotation)
-			emitter2D.Rotation = NormalizeRotationRange(AddRotationOffset(LocalUpAlign, emitter3D.Rotation))
+			local LocalUpAlign = NormalizeDegrees(ScreenAtan2ToPE2D(ScreenUpAngle) - ParentRotation)
+			Emitter2D.Rotation = NormalizeRotationRange(AddRotationOffset(LocalUpAlign, Emitter3D.Rotation))
 		else
-			emitter2D.Rotation = NormalizeRotationRange(OffsetRotationRange(emitter3D.Rotation, parentRotation))
+			Emitter2D.Rotation = NormalizeRotationRange(OffsetRotationRange(Emitter3D.Rotation, ParentRotation))
 		end
-		emitter2D.Squash = Squash
-		emitter2D.RotSpeed = emitter3D.RotSpeed
+		Emitter2D.Squash = Squash
+		Emitter2D.RotSpeed = Emitter3D.RotSpeed
 		return
 	end
 
 	if Orientation == Enum.ParticleOrientation.VelocityParallel then
-		if localEmissionAngle then
+		if LocalEmissionAngle then
 			-- Local Y along travel: Rotation = EmissionAngle when both use 0 = local up.
-			emitter2D.Rotation = NormalizeRotationRange(
-				AddRotationOffset(localEmissionAngle, ScaleNumberRangeValues(emitter3D.Rotation, SpinScale))
+			Emitter2D.Rotation = NormalizeRotationRange(
+				AddRotationOffset(LocalEmissionAngle, ScaleNumberRangeValues(Emitter3D.Rotation, SpinScale))
 			)
-			emitter2D.Squash = BlendNumberSequence(NegateNumberSequence(Squash), EDGE_ON_SQUASH, EdgeOn)
-			emitter2D.RotSpeed = ScaleNumberRangeValues(emitter3D.RotSpeed, SpinScale)
+			Emitter2D.Squash = BlendNumberSequence(NegateNumberSequence(Squash), EDGE_ON_SQUASH, EdgeOn)
+			Emitter2D.RotSpeed = ScaleNumberRangeValues(Emitter3D.RotSpeed, SpinScale)
 		else
-			emitter2D.Rotation = NormalizeRotationRange(OffsetRotationRange(emitter3D.Rotation, parentRotation))
-			emitter2D.Squash = Squash
-			emitter2D.RotSpeed = emitter3D.RotSpeed
+			Emitter2D.Rotation = NormalizeRotationRange(OffsetRotationRange(Emitter3D.Rotation, ParentRotation))
+			Emitter2D.Squash = Squash
+			Emitter2D.RotSpeed = Emitter3D.RotSpeed
 		end
 		return
 	end
 
 	if Orientation == Enum.ParticleOrientation.VelocityPerpendicular then
 		-- Face-on: billboard. Edge-on: soft squash + damp spin; bias local Y across travel.
-		local BillboardRotation = OffsetRotationRange(emitter3D.Rotation, parentRotation)
+		local BillboardRotation = OffsetRotationRange(Emitter3D.Rotation, ParentRotation)
 
-		if localEmissionAngle and EdgeOn > 0.05 then
+		if LocalEmissionAngle and EdgeOn > 0.05 then
 			local AlignedRotation = AddRotationOffset(
-				localEmissionAngle + 90,
-				ScaleNumberRangeValues(emitter3D.Rotation, SpinScale)
+				LocalEmissionAngle + 90,
+				ScaleNumberRangeValues(Emitter3D.Rotation, SpinScale)
 			)
 			local BillboardCenter = (BillboardRotation.Min + BillboardRotation.Max) * 0.5
 			local AlignedCenter = (AlignedRotation.Min + AlignedRotation.Max) * 0.5
 			local Center = BillboardCenter + (AlignedCenter - BillboardCenter) * EdgeOn
 			local HalfSpan = math.abs(BillboardRotation.Max - BillboardRotation.Min) * 0.5
-			emitter2D.Rotation = NormalizeRotationRange(NumberRange.new(Center - HalfSpan, Center + HalfSpan))
-			emitter2D.Squash = BlendNumberSequence(Squash, EDGE_ON_SQUASH, EdgeOn)
-			emitter2D.RotSpeed = ScaleNumberRangeValues(emitter3D.RotSpeed, SpinScale)
+			Emitter2D.Rotation = NormalizeRotationRange(NumberRange.new(Center - HalfSpan, Center + HalfSpan))
+			Emitter2D.Squash = BlendNumberSequence(Squash, EDGE_ON_SQUASH, EdgeOn)
+			Emitter2D.RotSpeed = ScaleNumberRangeValues(Emitter3D.RotSpeed, SpinScale)
 		else
-			emitter2D.Rotation = NormalizeRotationRange(BillboardRotation)
-			emitter2D.Squash = Squash
-			emitter2D.RotSpeed = emitter3D.RotSpeed
+			Emitter2D.Rotation = NormalizeRotationRange(BillboardRotation)
+			Emitter2D.Squash = Squash
+			Emitter2D.RotSpeed = Emitter3D.RotSpeed
 		end
 		return
 	end
 
-	emitter2D.Rotation = NormalizeRotationRange(OffsetRotationRange(emitter3D.Rotation, parentRotation))
-	emitter2D.Squash = Squash
-	emitter2D.RotSpeed = emitter3D.RotSpeed
+	Emitter2D.Rotation = NormalizeRotationRange(OffsetRotationRange(Emitter3D.Rotation, ParentRotation))
+	Emitter2D.Squash = Squash
+	Emitter2D.RotSpeed = Emitter3D.RotSpeed
 end
 
 --[=[
@@ -309,15 +368,19 @@ end
 	FacingCamera copies Squash/RotSpeed/Rotation (parent-local) with no palm foreshortening.
 	Velocity* modes get soft palm squash + spin damping.
 
+	@param props ApplyMotionAndPerspectiveProps
 	@within Particles
 ]=]
 
-function Particles.ApplyMotionAndPerspective(emitter2D : ParticleEmitter2D, emitter3D : ParticleEmitter, camera : Camera, pixelsPerStud : number, part : BasePart, attachment : Attachment?, frameRotation : number?)
-	local CameraCFrame = camera.CFrame
-	local ParentRotation = frameRotation or 0
-	local EmitterCFrame = GetEmitterCFrame(part, attachment)
-	local EmissionDirection = GetEmissionWorldDirection(emitter3D, part, attachment)
-	local Orientation = emitter3D.Orientation
+function Particles.ApplyMotionAndPerspective(props : ApplyMotionAndPerspectiveProps)
+	local Emitter2D = props.Emitter2D
+	local Emitter3D = props.Emitter3D
+	local CameraCFrame = props.Camera.CFrame
+	local ParentRotation = props.FrameRotation or 0
+	local EmitterCFrame = GetEmitterCFrame(props.Part, props.Attachment)
+	local EmissionDirection = GetEmissionWorldDirection(Emitter3D, props.Part, props.Attachment)
+	local Orientation = Emitter3D.Orientation
+	local PixelsPerStud = props.PixelsPerStud
 
 	local LocalEmissionAngle, ScreenFraction = ResolveLocalEmissionAngle(
 		CameraCFrame,
@@ -330,76 +393,79 @@ function Particles.ApplyMotionAndPerspective(emitter2D : ParticleEmitter2D, emit
 	local Facing = if UsePalm then GetPalmFacing(CameraCFrame, EmissionDirection) else 1
 	local SpeedFraction = if UsePalm then math.max(ScreenFraction, 0.35) else 1
 
-	emitter2D.Size = ScaleNumberSequence(emitter3D.Size, pixelsPerStud)
-	emitter2D.Speed = ScaleNumberRange(emitter3D.Speed, pixelsPerStud * SpeedFraction)
+	Emitter2D.Size = ScaleNumberSequence(Emitter3D.Size, PixelsPerStud)
+	Emitter2D.Speed = ScaleNumberRange(Emitter3D.Speed, PixelsPerStud * SpeedFraction)
 	-- SpreadAngle alone; EmissionSpread left at default — dual-writing 360/360 broke FacingCamera bursts.
-	emitter2D.SpreadAngle = AuthoredSpreadDegrees(emitter3D)
-	emitter2D.EmissionSpread = Vector2.zero
+	Emitter2D.SpreadAngle = AuthoredSpreadDegrees(Emitter3D)
+	Emitter2D.EmissionSpread = Vector2.zero
 	-- Always refresh — skipping left a stale angle when the axis swept through view-aligned.
-	emitter2D.EmissionAngle = LocalEmissionAngle
+	Emitter2D.EmissionAngle = LocalEmissionAngle
 
-	local AccelerationCamera = CameraCFrame:VectorToObjectSpace(emitter3D.Acceleration)
-	local ScreenAcceleration = Vector2.new(AccelerationCamera.X, -AccelerationCamera.Y) * pixelsPerStud
+	local AccelerationCamera = CameraCFrame:VectorToObjectSpace(Emitter3D.Acceleration)
+	local ScreenAcceleration = Vector2.new(AccelerationCamera.X, -AccelerationCamera.Y) * PixelsPerStud
 	local RotationRadians = math.rad(ParentRotation)
 	local Cos = math.cos(RotationRadians)
 	local Sin = math.sin(RotationRadians)
 
-	emitter2D.Acceleration = Vector2.new(
+	Emitter2D.Acceleration = Vector2.new(
 		ScreenAcceleration.X * Cos + ScreenAcceleration.Y * Sin,
 		-ScreenAcceleration.X * Sin + ScreenAcceleration.Y * Cos
 	)
 
-	ApplyOrientationAndPerspective(
-		emitter2D,
-		emitter3D,
-		ParentRotation,
-		LocalEmissionAngle,
-		Facing,
-		CameraCFrame
-	)
+	ApplyOrientationAndPerspective({
+		Emitter2D = Emitter2D,
+		Emitter3D = Emitter3D,
+		ParentRotation = ParentRotation,
+		LocalEmissionAngle = LocalEmissionAngle,
+		Facing = Facing,
+		CameraCFrame = CameraCFrame,
+	})
 end
 
 --[=[
 	Creates a `ParticleEmitter2D` mimic under `Parent`.
 
+	@param props CreateMimicProps
 	@within Particles
 ]=]
 
-function Particles.CreateMimic(scope : any, emitter3D : ParticleEmitter, parent : GuiObject, pixelsPerStud : number, rateScale : number?, emissionMode : Enum.ParticleEmitter2DEmissionMode?) : ParticleEmitter2D
-	local ResolvedRateScale = rateScale or 1
+function Particles.CreateMimic(props : CreateMimicProps) : ParticleEmitter2D
+	local Emitter3D = props.Emitter3D
+	local PixelsPerStud = props.PixelsPerStud
+	local ResolvedRateScale = props.RateScale or 1
 
-	local Emitter2D = scope:New("ParticleEmitter2D", {
-		Name = emitter3D.Name,
-		Parent = parent,
-		Enabled = emitter3D.Enabled,
-		TextureContent = emitter3D.TextureContent,
-		Color = emitter3D.Color,
-		Transparency = emitter3D.Transparency,
-		Lifetime = emitter3D.Lifetime,
-		Rate = emitter3D.Rate * ResolvedRateScale,
-		Drag = emitter3D.Drag,
-		Brightness = emitter3D.Brightness,
-		TimeScale = emitter3D.TimeScale,
-		Rotation = emitter3D.Rotation,
-		RotSpeed = emitter3D.RotSpeed,
-		Squash = emitter3D.Squash,
-		Blend = emitter3D.LightEmission,
-		LockedToParent = emitter3D.LockedToPart,
-		EmissionMode = emissionMode or Enum.ParticleEmitter2DEmissionMode.BoundingBox,
-		SpreadAngle = AuthoredSpreadDegrees(emitter3D),
+	local Emitter2D = props.Scope:New("ParticleEmitter2D", {
+		Name = Emitter3D.Name,
+		Parent = props.Parent,
+		Enabled = Emitter3D.Enabled,
+		TextureContent = Emitter3D.TextureContent,
+		Color = Emitter3D.Color,
+		Transparency = Emitter3D.Transparency,
+		Lifetime = Emitter3D.Lifetime,
+		Rate = Emitter3D.Rate * ResolvedRateScale,
+		Drag = Emitter3D.Drag,
+		Brightness = Emitter3D.Brightness,
+		TimeScale = Emitter3D.TimeScale,
+		Rotation = Emitter3D.Rotation,
+		RotSpeed = Emitter3D.RotSpeed,
+		Squash = Emitter3D.Squash,
+		Blend = Emitter3D.LightEmission,
+		LockedToParent = Emitter3D.LockedToPart,
+		EmissionMode = props.EmissionMode or Enum.ParticleEmitter2DEmissionMode.BoundingBox,
+		SpreadAngle = AuthoredSpreadDegrees(Emitter3D),
 		EmissionSpread = Vector2.zero,
-		FlipbookLayout = emitter3D.FlipbookLayout,
-		FlipbookMode = emitter3D.FlipbookMode,
-		FlipbookFramerate = emitter3D.FlipbookFramerate,
-		FlipbookStartRandom = emitter3D.FlipbookStartRandom,
-		FlipbookBlendFrames = emitter3D.FlipbookBlendFrames,
-		FlipbookSizeX = emitter3D.FlipbookSizeX,
-		FlipbookSizeY = emitter3D.FlipbookSizeY,
+		FlipbookLayout = Emitter3D.FlipbookLayout,
+		FlipbookMode = Emitter3D.FlipbookMode,
+		FlipbookFramerate = Emitter3D.FlipbookFramerate,
+		FlipbookStartRandom = Emitter3D.FlipbookStartRandom,
+		FlipbookBlendFrames = Emitter3D.FlipbookBlendFrames,
+		FlipbookSizeX = Emitter3D.FlipbookSizeX,
+		FlipbookSizeY = Emitter3D.FlipbookSizeY,
 	})
 
-	Emitter2D.Size = ScaleNumberSequence(emitter3D.Size, pixelsPerStud)
-	Emitter2D.Speed = ScaleNumberRange(emitter3D.Speed, pixelsPerStud)
-	Emitter2D.Acceleration = Vector2.new(emitter3D.Acceleration.X, -emitter3D.Acceleration.Y) * pixelsPerStud
+	Emitter2D.Size = ScaleNumberSequence(Emitter3D.Size, PixelsPerStud)
+	Emitter2D.Speed = ScaleNumberRange(Emitter3D.Speed, PixelsPerStud)
+	Emitter2D.Acceleration = Vector2.new(Emitter3D.Acceleration.X, -Emitter3D.Acceleration.Y) * PixelsPerStud
 
 	return Emitter2D
 end
@@ -429,26 +495,34 @@ local function CaptureEmitterEnabled(emitter3D : ParticleEmitter) : boolean
 	return IsEmitterEnabled
 end
 
-local function AddBinding(bindings : {MimicBinding}, scope : any, emitter3D : ParticleEmitter, part : BasePart, boundsFrame : Frame, layer : "Front" | "Behind", pixelsPerStud : number, rateScale : number, attachment : Attachment?, emissionMode : Enum.ParticleEmitter2DEmissionMode, isEmitterEnabled : boolean)
+local function AddBinding(props : AddBindingProps)
+	local Emitter3D = props.Emitter3D
 	local HostFrame = nil
-	local Parent = boundsFrame
+	local Parent = props.BoundsFrame
 
-	if attachment then
-		HostFrame = CreateAttachmentHost(scope, boundsFrame, `{emitter3D.Name}_Point`)
+	if props.Attachment then
+		HostFrame = CreateAttachmentHost(props.Scope, props.BoundsFrame, `{Emitter3D.Name}_Point`)
 		Parent = HostFrame
 	end
 
-	local Emitter2D = Particles.CreateMimic(scope, emitter3D, Parent, pixelsPerStud, rateScale, emissionMode)
+	local Emitter2D = Particles.CreateMimic({
+		Scope = props.Scope,
+		Emitter3D = Emitter3D,
+		Parent = Parent,
+		PixelsPerStud = props.PixelsPerStud,
+		RateScale = props.RateScale,
+		EmissionMode = props.EmissionMode,
+	})
 
-	table.insert(bindings, {
-		Emitter3D = emitter3D,
+	table.insert(props.Bindings, {
+		Emitter3D = Emitter3D,
 		Emitter2D = Emitter2D,
-		Part = part,
-		Layer = layer,
-		Attachment = attachment,
+		Part = props.Part,
+		Layer = props.Layer,
+		Attachment = props.Attachment,
 		HostFrame = HostFrame,
-		IsEmitterEnabled = isEmitterEnabled,
-		IsLockedToPart = emitter3D.LockedToPart,
+		IsEmitterEnabled = props.IsEmitterEnabled,
+		IsLockedToPart = Emitter3D.LockedToPart,
 	})
 end
 
@@ -498,64 +572,64 @@ function Particles.AttachToBoundsFrames(scope : any, root : Instance, framesByPa
 		if Attachment then
 			local LayerFrame = if ZOffset < 0 then Frames.Behind else Frames.Front
 			local LayerName : "Front" | "Behind" = if ZOffset < 0 then "Behind" else "Front"
-			AddBinding(
-				Bindings,
-				scope,
-				emitter3D,
-				Part,
-				LayerFrame,
-				LayerName,
-				pixelsPerStud,
-				1,
-				Attachment,
-				Enum.ParticleEmitter2DEmissionMode.Point,
-				IsEmitterEnabled
-			)
+			AddBinding({
+				Bindings = Bindings,
+				Scope = scope,
+				Emitter3D = emitter3D,
+				Part = Part,
+				BoundsFrame = LayerFrame,
+				Layer = LayerName,
+				PixelsPerStud = pixelsPerStud,
+				RateScale = 1,
+				Attachment = Attachment,
+				EmissionMode = Enum.ParticleEmitter2DEmissionMode.Point,
+				IsEmitterEnabled = IsEmitterEnabled,
+			})
 		elseif IsVolume then
 			local BehindWeight, FrontWeight = GetVolumeLayerWeights(ZOffset)
 
-			AddBinding(
-				Bindings,
-				scope,
-				emitter3D,
-				Part,
-				Frames.Behind,
-				"Behind",
-				pixelsPerStud,
-				BehindWeight,
-				nil,
-				Enum.ParticleEmitter2DEmissionMode.BoundingBox,
-				IsEmitterEnabled
-			)
-			AddBinding(
-				Bindings,
-				scope,
-				emitter3D,
-				Part,
-				Frames.Front,
-				"Front",
-				pixelsPerStud,
-				FrontWeight,
-				nil,
-				Enum.ParticleEmitter2DEmissionMode.BoundingBox,
-				IsEmitterEnabled
-			)
+			AddBinding({
+				Bindings = Bindings,
+				Scope = scope,
+				Emitter3D = emitter3D,
+				Part = Part,
+				BoundsFrame = Frames.Behind,
+				Layer = "Behind",
+				PixelsPerStud = pixelsPerStud,
+				RateScale = BehindWeight,
+				Attachment = nil,
+				EmissionMode = Enum.ParticleEmitter2DEmissionMode.BoundingBox,
+				IsEmitterEnabled = IsEmitterEnabled,
+			})
+			AddBinding({
+				Bindings = Bindings,
+				Scope = scope,
+				Emitter3D = emitter3D,
+				Part = Part,
+				BoundsFrame = Frames.Front,
+				Layer = "Front",
+				PixelsPerStud = pixelsPerStud,
+				RateScale = FrontWeight,
+				Attachment = nil,
+				EmissionMode = Enum.ParticleEmitter2DEmissionMode.BoundingBox,
+				IsEmitterEnabled = IsEmitterEnabled,
+			})
 		else
 			local LayerFrame = if ZOffset < 0 then Frames.Behind else Frames.Front
 			local LayerName : "Front" | "Behind" = if ZOffset < 0 then "Behind" else "Front"
-			AddBinding(
-				Bindings,
-				scope,
-				emitter3D,
-				Part,
-				LayerFrame,
-				LayerName,
-				pixelsPerStud,
-				1,
-				nil,
-				Enum.ParticleEmitter2DEmissionMode.BoundingBox,
-				IsEmitterEnabled
-			)
+			AddBinding({
+				Bindings = Bindings,
+				Scope = scope,
+				Emitter3D = emitter3D,
+				Part = Part,
+				BoundsFrame = LayerFrame,
+				Layer = LayerName,
+				PixelsPerStud = pixelsPerStud,
+				RateScale = 1,
+				Attachment = nil,
+				EmissionMode = Enum.ParticleEmitter2DEmissionMode.BoundingBox,
+				IsEmitterEnabled = IsEmitterEnabled,
+			})
 		end
 
 		emitter3D.Enabled = false
@@ -567,12 +641,19 @@ end
 --[=[
 	Updates enable state, attachment hosts, depth ZIndex, and perspective each frame refresh.
 
+	@param props UpdateMimicsProps
 	@within Particles
 ]=]
 
-function Particles.UpdateMimics(scope : any, bindings : {MimicBinding}, camera : Camera, pixelSize : Vector2, depthByPart : {[BasePart] : number}, boundsByPart : {[BasePart] : Spatial.LayerBounds}, isParticlesVisible : boolean)
+function Particles.UpdateMimics(props : UpdateMimicsProps)
+	local Scope = props.Scope
+	local Camera = props.Camera
+	local PixelSize = props.PixelSize
+	local BoundsByPart = props.BoundsByPart
+	local IsParticlesVisible = props.IsParticlesVisible
+
 	local PartsByDepth = {}
-	for part, depth in depthByPart do
+	for part, depth in props.DepthByPart do
 		table.insert(PartsByDepth, {Part = part, Depth = depth})
 	end
 
@@ -585,11 +666,11 @@ function Particles.UpdateMimics(scope : any, bindings : {MimicBinding}, camera :
 		DepthRankByPart[entry.Part] = index
 	end
 
-	for _, binding in bindings do
-		local ShouldEnable = isParticlesVisible and binding.IsEmitterEnabled
+	for _, binding in props.Bindings do
+		local ShouldEnable = IsParticlesVisible and binding.IsEmitterEnabled
 		local DepthRank = DepthRankByPart[binding.Part] or 1
 
-		scope:New(binding.Emitter2D, {
+		Scope:New(binding.Emitter2D, {
 			Enabled = ShouldEnable,
 			LockedToParent = binding.IsLockedToPart,
 			ZIndex = DepthRank,
@@ -599,29 +680,29 @@ function Particles.UpdateMimics(scope : any, bindings : {MimicBinding}, camera :
 			binding.Emitter2D:Clear()
 		end
 
-		local Depth = depthByPart[binding.Part]
-		local Bounds = boundsByPart[binding.Part]
+		local Depth = props.DepthByPart[binding.Part]
+		local Bounds = BoundsByPart[binding.Part]
 
 		if not Depth or not Bounds then
 			continue
 		end
 
-		local PixelsPerStud = Spatial.GetPixelsPerStud(camera, Depth, pixelSize)
+		local PixelsPerStud = Spatial.GetPixelsPerStud(Camera, Depth, PixelSize)
 
 		if binding.Attachment and binding.HostFrame then
 			local ScreenX, ScreenY, AttachmentDepth = Spatial.WorldToViewportPixels(
-				camera,
+				Camera,
 				binding.Attachment.WorldPosition,
-				pixelSize
+				PixelSize
 			)
 
 			if not ScreenX then
-				scope:New(binding.HostFrame, {Visible = false,})
+				Scope:New(binding.HostFrame, {Visible = false,})
 				continue
 			end
 
 			if AttachmentDepth then
-				PixelsPerStud = Spatial.GetPixelsPerStud(camera, AttachmentDepth, pixelSize)
+				PixelsPerStud = Spatial.GetPixelsPerStud(Camera, AttachmentDepth, PixelSize)
 			end
 
 			local DeltaX = (ScreenX :: number) - Bounds.CenterX
@@ -632,21 +713,21 @@ function Particles.UpdateMimics(scope : any, bindings : {MimicBinding}, camera :
 			local LocalX = DeltaX * Cos + DeltaY * Sin
 			local LocalY = -DeltaX * Sin + DeltaY * Cos
 
-			scope:New(binding.HostFrame, {
+			Scope:New(binding.HostFrame, {
 				Visible = true,
 				Position = UDim2.fromOffset(LocalX + Bounds.Width * 0.5, LocalY + Bounds.Height * 0.5),
 			})
 		end
 
-		Particles.ApplyMotionAndPerspective(
-			binding.Emitter2D,
-			binding.Emitter3D,
-			camera,
-			PixelsPerStud,
-			binding.Part,
-			binding.Attachment,
-			Bounds.Rotation
-		)
+		Particles.ApplyMotionAndPerspective({
+			Emitter2D = binding.Emitter2D,
+			Emitter3D = binding.Emitter3D,
+			Camera = Camera,
+			PixelsPerStud = PixelsPerStud,
+			Part = binding.Part,
+			Attachment = binding.Attachment,
+			FrameRotation = Bounds.Rotation,
+		})
 	end
 end
 
