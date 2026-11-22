@@ -23,7 +23,6 @@ local View = RichViewport.new(SourceModel, Camera, ParentFrame)
 ## API
 
 ### Constructor
-
 `RichViewport.new(Object, Camera, Parent) -> RichViewport`
 
 | Arg | Type | Notes |
@@ -53,7 +52,6 @@ Submodules (also available as `RichViewport.Spatial`, `.Overlays`, `.Particles`)
 - **Particles** — `ParticleEmitter` → `ParticleEmitter2D` mimics
 
 ### Methods
-
 | Method | Description |
 | --- | --- |
 | `Refresh()` | Force bounds + particle mimic update; fires `Refreshed` |
@@ -93,7 +91,6 @@ Perspective is the biggest problem and limitation of this all. 3D particle emitt
 I do not know the exact math of this since I had AI work out those details, and so as such I will have AI show the details:
 
 ### World → screen pixels
-
 Studio's `Camera:WorldToViewportPoint` is avoided because ViewportFrame cameras keep `ViewportSize` at `(1, 1)` and break aspect. Projection is done manually with vertical FOV and the overlay's pixel size.
 
 In camera space, Roblox looks down **−Z**, so depth is:
@@ -127,7 +124,6 @@ $$
 Farther → smaller PPS → smaller / slower 2D particles.
 
 ### Directions → emission angle + foreshortening
-
 A world direction is taken into camera space. The **screen residual** is $(R_x, -R_y)$:
 
 - **Angle** = $\text{atan2}(R_y^{\text{screen}}, R_x)$ (0 = screen right)
@@ -139,7 +135,6 @@ A world direction is taken into camera space. The **screen residual** is $(R_x, 
 If the emit axis is nearly view-aligned (ScreenFraction below ~0.22), the XY residual is noisy, so a ⊥ basis $(U, V)$ is built around that axis and the stronger screen axis is picked (with a small horizontal bias). That keeps face-on discs from flipping 180°.
 
 ### Speed “perspective”
-
 ```text
 Speed₂D = Speed₃D × PPS × SpeedFraction
 ```
@@ -151,7 +146,6 @@ Speed₂D = Speed₃D × PPS × SpeedFraction
 Size always uses full PPS (apparent scale by depth only).
 
 ### Palm foreshortening (Velocity\* only)
-
 Treat the emission direction as the particle's “palm” normal:
 
 $$
@@ -166,11 +160,9 @@ Then $\text{EdgeOn} = (1 - \text{Facing})^2$, $\text{SpinScale} = \text{Facing}^
 **FacingCamera** skips this entirely — authored Rotation / Squash / RotSpeed only (parent-local).
 
 ### Acceleration
-
 World acceleration → camera XY (Y flipped) × PPS, then **rotated by −ParentRotation** into the emit frame's local axes so gravity stays screen-correct under a rotated OBB host.
 
 ### Mental model
-
 Depth sets a uniform stud→pixel scale; the emit axis's lateral vs depth split sets how much 2D travel you see; Velocity\* modes additionally fake the disc tipping toward / away from the camera with squash and spin.
 
 ## Limitations
@@ -180,3 +172,8 @@ I won't go into the details of all of it, but it really just boils down to how m
 
 ## What's next?
 Other than improving what is already here, I would like to add support for other instances that don't work, such as beams and trails. Every instance type requires a different problem to solve, so this is tricky! Feel free to make a PR at any time to propose adding any of these.
+
+## SCDS Rating
+<img src="./img/scds-rating.png" alt="SCDS Rating" width="88" height="84">
+
+*I designed this solution myself, both on a high-level and technical-level. However, AI was used to speed up the process by implementing the specifics, including the boilerplate and math.*
