@@ -85,6 +85,7 @@ end
 
 	@within Overlays
 ]=]
+
 function Overlays.CreateStack(scope : any, parent : GuiObject, camera : Camera) : OverlayStack
 	local Behind = scope:New("Frame", {
 		Name = "BehindOverlay",
@@ -155,6 +156,7 @@ end
 
 	@within Overlays
 ]=]
+
 function Overlays.CreatePartFrames(scope : any, part : BasePart, behindOverlay : Frame, frontOverlay : Frame) : PartFrames
 	local Behind = scope:New("Frame", {
 		Name = `{part.Name}_Behind`,
@@ -191,6 +193,7 @@ end
 
 	@within Overlays
 ]=]
+
 function Overlays.CreatePartLayerSlice(scope : any, part : BasePart, parent : GuiObject, camera : Camera) : PartFrames
 	local Behind = scope:New("Frame", {
 		Name = `{part.Name}_Behind`,
@@ -239,6 +242,7 @@ end
 
 	@within Overlays
 ]=]
+
 function Overlays.SyncPartVisual(visual : BasePart, source : BasePart)
 	visual.CFrame = source.CFrame
 	visual.Size = source.Size
@@ -259,6 +263,7 @@ end
 
 	@within Overlays
 ]=]
+
 function Overlays.UpdatePartFrames(scope : any, frames : PartFrames, bounds : Spatial.LayerBounds, isDebugVisible : boolean)
 	ApplyLayerTransform(scope, frames.Front, bounds)
 	ApplyLayerTransform(scope, frames.Behind, bounds)
@@ -290,6 +295,7 @@ end
 
 	@within Overlays
 ]=]
+
 function Overlays.HidePartFrames(scope : any, frames : PartFrames)
 	scope:New(frames.Front, {Visible = false,})
 	scope:New(frames.Behind, {Visible = false,})
@@ -301,6 +307,7 @@ end
 
 	@within Overlays
 ]=]
+
 function Overlays.ApplyDepthRanking(scope : any, ranked : {{Front : Frame, Behind : Frame, Depth : number}})
 	table.sort(ranked, function(a, b)
 		return a.Depth > b.Depth
@@ -317,6 +324,7 @@ end
 
 	@within Overlays
 ]=]
+
 function Overlays.ApplyLayeredDepthRanking(scope : any, ranked : {{Front : Frame, Behind : Frame, Viewport : ViewportFrame, Depth : number}})
 	table.sort(ranked, function(a, b)
 		return a.Depth > b.Depth

@@ -81,6 +81,7 @@ end
 	@return RichViewport
 	@within RichViewport
 ]=]
+
 function RichViewport.new(object : Instance, camera : Camera, parent : GuiObject) : RichViewport
 	assert(typeof(object) == "Instance", "Object must be an Instance")
 	assert(camera:IsA("Camera"), "Camera must be a Camera")
@@ -155,6 +156,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.Refresh(self : RichViewport)
 	if self._IsDestroyed then
 		return
@@ -244,6 +246,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.ShowDebug(self : RichViewport)
 	RichViewport._AssertNotDestroyed(self)
 	self._IsDebugVisible = true
@@ -255,6 +258,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.HideDebug(self : RichViewport)
 	RichViewport._AssertNotDestroyed(self)
 	self._IsDebugVisible = false
@@ -266,6 +270,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.ShowParticles(self : RichViewport)
 	RichViewport._AssertNotDestroyed(self)
 	self._IsParticlesVisible = true
@@ -277,6 +282,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.HideParticles(self : RichViewport)
 	RichViewport._AssertNotDestroyed(self)
 	self._IsParticlesVisible = false
@@ -290,6 +296,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.EnableBasePartLayering(self : RichViewport)
 	RichViewport._AssertNotDestroyed(self)
 
@@ -308,6 +315,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.DisableBasePartLayering(self : RichViewport)
 	RichViewport._AssertNotDestroyed(self)
 
@@ -328,6 +336,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.IsBasePartLayeringEnabled(self : RichViewport) : boolean
 	return self._BasePartLayeringCount > 0
 end
@@ -337,6 +346,7 @@ end
 
 	@within RichViewport
 ]=]
+
 function RichViewport.Destroy(self : RichViewport)
 	if self._IsDestroyed then
 		return
@@ -594,26 +604,32 @@ end
 	@within RichViewport
 	Live clone inside the ViewportFrame. Assigning a new Instance clones it in.
 ]=]
+
 --[=[
 	@prop Camera Camera
 	@within RichViewport
 ]=]
+
 --[=[
 	@prop Parent GuiObject
 	@within RichViewport
 ]=]
+
 --[=[
 	@prop ViewportFrame ViewportFrame
 	@within RichViewport
 ]=]
+
 --[=[
 	@prop Scope Scope
 	@within RichViewport
 ]=]
+
 --[=[
 	@prop Destroyed RBXScriptSignal
 	@within RichViewport
 ]=]
+
 --[=[
 	@prop Refreshed RBXScriptSignal
 	@within RichViewport

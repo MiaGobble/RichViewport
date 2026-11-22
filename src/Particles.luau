@@ -304,6 +304,7 @@ end
 
 	@within Particles
 ]=]
+
 function Particles.ApplyMotionAndPerspective(emitter2D : ParticleEmitter2D, emitter3D : ParticleEmitter, camera : Camera, pixelsPerStud : number, part : BasePart, attachment : Attachment?, frameRotation : number?)
 	local CameraCFrame = camera.CFrame
 	local ParentRotation = frameRotation or 0
@@ -357,6 +358,7 @@ end
 
 	@within Particles
 ]=]
+
 function Particles.CreateMimic(scope : any, emitter3D : ParticleEmitter, parent : GuiObject, pixelsPerStud : number, rateScale : number?, emissionMode : Enum.ParticleEmitter2DEmissionMode?) : ParticleEmitter2D
 	local ResolvedRateScale = rateScale or 1
 
@@ -460,6 +462,7 @@ end
 
 	@within Particles
 ]=]
+
 function Particles.AttachToBoundsFrames(scope : any, root : Instance, framesByPart : {[BasePart] : Overlays.PartFrames}, pixelsPerStud : number) : {MimicBinding}
 	local Bindings = {}
 
@@ -557,6 +560,7 @@ end
 
 	@within Particles
 ]=]
+
 function Particles.UpdateMimics(scope : any, bindings : {MimicBinding}, camera : Camera, pixelSize : Vector2, depthByPart : {[BasePart] : number}, boundsByPart : {[BasePart] : Spatial.LayerBounds}, isParticlesVisible : boolean)
 	local PartsByDepth = {}
 	for part, depth in depthByPart do

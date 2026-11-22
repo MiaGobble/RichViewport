@@ -88,6 +88,7 @@ end
 
 	@within Spatial
 ]=]
+
 function Spatial.CollectParts(root : Instance) : {BasePart}
 	local Parts = {}
 
@@ -108,6 +109,7 @@ end
 
 	@within Spatial
 ]=]
+
 function Spatial.WorldToViewportPixels(camera : Camera, worldPoint : Vector3, pixelSize : Vector2) : (number?, number?, number?)
 	local Relative = camera.CFrame:PointToObjectSpace(worldPoint)
 	local Depth = -Relative.Z
@@ -131,6 +133,7 @@ end
 
 	@within Spatial
 ]=]
+
 function Spatial.GetPixelsPerStud(camera : Camera, depth : number, pixelSize : Vector2) : number
 	if depth <= 0 or pixelSize.Y <= 0 then
 		return 1
@@ -145,6 +148,7 @@ end
 
 	@within Spatial
 ]=]
+
 function Spatial.GetFocusCFrame(root : Instance) : CFrame
 	if root:IsA("Model") then
 		return select(1, root:GetBoundingBox())
@@ -165,6 +169,7 @@ end
 
 	@within Spatial
 ]=]
+
 function Spatial.GetPartLayerBounds(camera : Camera, part : BasePart, pixelSize : Vector2, previousRotation : number?) : LayerBounds?
 	if pixelSize.X <= 0 or pixelSize.Y <= 0 then
 		return nil
