@@ -109,6 +109,7 @@ local function ProjectWorldDirectionToScreen(cameraCFrame : CFrame, worldDirecti
 	end
 
 	local ScreenFraction = math.clamp(ScreenMag / TotalMag, 0, 1)
+
 	if ScreenMag <= 1e-6 then
 		return nil, ScreenFraction
 	end
@@ -132,11 +133,13 @@ end
 local function PerpendicularBasis(axis : Vector3, emitterCFrame : CFrame) : (Vector3, Vector3)
 	local Normal = if axis.Magnitude > 1e-8 then axis.Unit else emitterCFrame.LookVector
 	local Hint = emitterCFrame.RightVector
+
 	if math.abs(Hint:Dot(Normal)) > 0.95 then
 		Hint = emitterCFrame.UpVector
 	end
 
 	local U = Normal:Cross(Hint)
+
 	if U.Magnitude <= 1e-8 then
 		U = Normal:Cross(Vector3.yAxis)
 	end
@@ -162,9 +165,11 @@ local function ResolveLocalEmissionAngle(cameraCFrame : CFrame, emissionDirectio
 
 	local BestAngle = UAngle
 	local BestFraction = UFraction
+
 	if UAngle and VAngle then
 		local UScore = UFraction + 0.08 * HorizontalBias(UAngle)
 		local VScore = VFraction + 0.08 * HorizontalBias(VAngle)
+
 		if VScore > UScore then
 			BestAngle = VAngle
 			BestFraction = VFraction
@@ -237,6 +242,7 @@ local function ApplyOrientationAndPerspective(emitter2D : ParticleEmitter2D, emi
 	if Orientation == Enum.ParticleOrientation.FacingCameraWorldUp then
 		-- PE2D / GuiObject zero = local up; keep local Y on projected world up.
 		local ScreenUpAngle = select(1, ProjectWorldDirectionToScreen(cameraCFrame, Vector3.yAxis))
+
 		if ScreenUpAngle then
 			local LocalUpAlign = NormalizeDegrees(ScreenAtan2ToPE2D(ScreenUpAngle) - parentRotation)
 			emitter2D.Rotation = NormalizeRotationRange(AddRotationOffset(LocalUpAlign, emitter3D.Rotation))
@@ -267,6 +273,7 @@ local function ApplyOrientationAndPerspective(emitter2D : ParticleEmitter2D, emi
 	if Orientation == Enum.ParticleOrientation.VelocityPerpendicular then
 		-- Face-on: billboard. Edge-on: soft squash + damp spin; bias local Y across travel.
 		local BillboardRotation = OffsetRotationRange(emitter3D.Rotation, parentRotation)
+
 		if localEmissionAngle and EdgeOn > 0.05 then
 			local AlignedRotation = AddRotationOffset(
 				localEmissionAngle + 90,
@@ -413,6 +420,7 @@ end
 
 local function CaptureEmitterEnabled(emitter3D : ParticleEmitter) : boolean
 	local Stored = emitter3D:GetAttribute(WAS_ENABLED_ATTRIBUTE)
+
 	if typeof(Stored) == "boolean" then
 		return Stored
 	end
@@ -468,11 +476,13 @@ function Particles.AttachToBoundsFrames(scope : any, root : Instance, framesByPa
 
 	for _, emitter3D in root:QueryDescendants("ParticleEmitter") do
 		local Part = emitter3D:FindFirstAncestorWhichIsA("BasePart")
+
 		if not Part then
 			continue
 		end
 
 		local Frames = framesByPart[Part]
+
 		if not Frames then
 			continue
 		end
@@ -592,6 +602,7 @@ function Particles.UpdateMimics(scope : any, bindings : {MimicBinding}, camera :
 
 		local Depth = depthByPart[binding.Part]
 		local Bounds = boundsByPart[binding.Part]
+
 		if not Depth or not Bounds then
 			continue
 		end

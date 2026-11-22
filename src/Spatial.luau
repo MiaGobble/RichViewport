@@ -208,6 +208,7 @@ function Spatial.GetPartLayerBounds(camera : Camera, part : BasePart, pixelSize 
 
 	for _, axis in {PartCFrame.RightVector, PartCFrame.UpVector, PartCFrame.LookVector} do
 		local Angle = ScreenAngleOfWorldAxis(camera, Origin, axis, pixelSize)
+
 		if Angle then
 			table.insert(CandidateAngles, Angle)
 		end

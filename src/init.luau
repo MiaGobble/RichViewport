@@ -154,6 +154,7 @@ function RichViewport.Refresh(self : RichViewport)
 
 	-- Project in root pixel space so Behind/Front overlays share the same origin as the viewport.
 	local PixelSize = self._Root.AbsoluteSize
+
 	if PixelSize.X <= 0 or PixelSize.Y <= 0 then
 		return
 	end
@@ -554,6 +555,7 @@ function RichViewport._RebuildContent(self : RichViewport)
 	self._FrontOverlay.Visible = not Layered
 
 	local Object = self.Object
+
 	if Object then
 		Object.Parent = RichViewport._GetObjectParent(self)
 	end
